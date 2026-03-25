@@ -50,9 +50,8 @@ if run_btn:
             else:
                 st.error("No s'han pogut descarregar dades. Revisa si l'origen yfinance està limitant la IP (Rate Limit).")
 
-        # Procedim al Sentiment si tenim ranking
-        if not st.session_state.ranking_df.empty:
             with st.spinner('Realitzant Anàlisi de Sentiment i Cercant Earnings...'):
+                import time
                 # Ara apliquem sentiment als top d'aquest dataframe iterativament
                 sentiments = []
                 catalysts_list = []
@@ -68,6 +67,9 @@ if run_btn:
                     er = check_earnings(tk)
                     earnings_list.append(er)
                     
+                    # Pausa per evitar Rate Limit (Gemini Free Tier)
+                    time.sleep(2)
+                
                 st.session_state.ranking_df["Sentiment (IA)"] = sentiments
                 st.session_state.ranking_df["Catalitzadors Clau"] = catalysts_list
                 st.session_state.ranking_df["Earnings Date"] = earnings_list
