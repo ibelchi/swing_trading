@@ -114,6 +114,7 @@ with tab_history:
             st.dataframe(
                 df.drop(columns=["_symbol_real"]),
                 column_config={
+                    "ID": None,  # Amaguem la columna ID
                     "Símbol": st.column_config.LinkColumn(
                         "Símbol",
                         display_text=r"https://es\.finance\.yahoo\.com/quote/(.*?)/"
@@ -123,34 +124,48 @@ with tab_history:
             )
             
             st.divider()
-            st.subheader("Generar Informe (IA)")
+            st.subheader("Generar Informes (IA)")
             
-            selected_id = st.selectbox("Selecciona un ID per generar l'informe profund", df["ID"].tolist())
-            if st.button("Generar Informe amb LangChain"):
-                op = db.query(Opportunity).filter(Opportunity.id == selected_id).first()
-                if op:
-                    if op.explanation and not op.market_context:
-                        with st.spinner("L'IA està analitzant la troballa tècnica contrastant amb el RAG..."):
-                            gen = ReportGenerator()
-                            # El informe es guarda a 'market_context' o el mostrem directament
-                            informe = gen.generate_report(
-                                symbol=op.symbol, 
-                                strategy_name=op.strategy_name, 
-                                tech_reason=op.explanation, 
-                                current_price=op.current_price,
-                                metrics=op.metrics
-                            )
-                            
-                            # Caching de l'informe generat
-                            op.market_context = informe
-                            db.commit()
-                            
-                    elif op.market_context:
-                        informe = op.market_context
-                    else:
-                        informe = "No hi ha dades tècniques per arrencar l'informe."
-                        
-                    st.markdown(informe)
+            # Selector múltiple basat en Tickers
+            ticker_list = df["_symbol_real"].unique().tolist()
+            selected_symbols = st.multiselect("Selecciona les empreses per analitzar (podeu triar-ne diverses)", ticker_list)
+            
+            if st.button("Generar Informes Seleccionats"):
+                if not selected_symbols:
+                    st.warning("Selecciona com a mínim una empresa.")
+                else:
+                    all_reports = ""
+                    progress_bar = st.progress(0)
+                    
+                    for idx, sym in enumerate(selected_symbols):
+                        with st.status(f"Analitzant {sym}...", expanded=True) as status:
+                            op = db.query(Opportunity).filter(Opportunity.symbol == sym).order_by(Opportunity.date_detected.desc()).first()
+                            if op:
+                                gen = ReportGenerator()
+                                informe = gen.generate_report(
+                                    symbol=op.symbol, 
+                                    strategy_name=op.strategy_name, 
+                                    tech_reason=op.explanation, 
+                                    current_price=op.current_price,
+                                    metrics=op.metrics
+                                )
+                                
+                                st.markdown(f"### Informe per a {sym}")
+                                st.markdown(informe)
+                                
+                                # Acumular per a la descàrrega
+                                all_reports += f"# INFORME DE MERCAT: {sym}\n\n{informe}\n\n---\n\n"
+                                
+                            progress_bar.progress((idx + 1) / len(selected_symbols))
+                            status.update(label=f"Anàlisi de {sym} completada", state="complete")
+                    
+                    st.divider()
+                    st.download_button(
+                        label="📥 Descarregar tots els informes (.md)",
+                        data=all_reports,
+                        file_name="informes_inversio.md",
+                        mime="text/markdown"
+                    )
     finally:
         db.close()
 

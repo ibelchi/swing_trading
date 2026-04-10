@@ -58,35 +58,41 @@ CONEIXEMENT TEÒRIC I CRITERIS DE L'USUARI (RAG):
 
 ---
 INSTRUCCIONS D'ESTRUCTURA:
-Genera l'informe exactament amb aquests punts (si falta una dada, posa "Dada no disponible"):
+Genera l'informe exactament amb aquests punts. És CRUCIAL que etiquetis cada origen de dades:
 
-1. Resum Executiu i Puntuació:
+1. Resum Executiu i Puntuació (DADA CONTEXTUAL/SINTÈTICA):
    - Fundamental Score: [0-100]
    - Nivell de Risc Fonamental: [Baix / Mitjà / Alt / Crític]
    - Tesi en una frase.
 
-2. Calendari de Riscos i Catalitzadors:
-   - Pròxims Earnings: [Data] (Alerta si és en < 7 dies).
-   - Data Ex-Dividend i Esdeveniments Macro de fons.
+2. Calendari de Riscos i Catalitzadors (DADA FRESCUA):
+   - Pròxims Earnings: {next_earnings} (Alerta si és en < 7 dies).
+   - Data Ex-Dividend: {dividend_yield}% (Dividend actual).
 
-3. Salut Financera i Valoració:
-   - EPS i PER vs Sector (usa el teu coneixement general per comparar).
-   - Deute/Patrimoni i Marges Operatius (avalua segons el teu coneixement del ticker).
+3. Salut Financera i Valoració (MESCLA DADES):
+   - EPS: {eps} i PER: {per} (DADA FRESCUA).
+   - Salut General, Deute i Marges (DADA CONTEXTUAL basada en el model Gemini: Avalua segons el teu coneixement del ticker).
 
-4. Flux de "Diners Intel·ligents" (Subtil):
-   - Institutional Ownership, Insider Trading i Sentiment d'analistes (segons coneixement general).
+4. Flux de "Diners Intel·ligents" (DADA CONTEXTUAL):
+   - Institutional Ownership, Insider Trading i Sentiment d'analistes. 
+   - (Aquesta secció es basa exclusivament en dades d'entrenament del model, no en temps real).
 
-5. Context Sectorial:
-   - Força Relativa del Sector i Correlacions.
+5. Context Sectorial (DADA CONTEXTUAL):
+   - Força Relativa del Sector i Correlacions macro.
 
 6. Resum Final i Veredicte:
    - Punts a favor i Punts en contra.
    - Veredicte Fonamental: [APROVAT / CAUTELA / DESCARTAT].
 
+---
 LÒGICA CRÍTICA:
-* Prioritat de dades: Si les dades actuals són dolentes (PER alt, EPS baix) malgrat el gràfic, sigues cautelós.
-* Si el context RAG diu que no vols invertir en aquesta empresa (llista negra), el veredicte ha de ser DESCARTAT.
+* Si les dades actuals són dolentes malgrat el gràfic, sigues cautelós.
+* Si el context RAG diu que no vols invertir en aquesta empresa, el veredicte ha de ser DESCARTAT.
 * Respon sempre en CATALÀ.
+
+---
+AVÍS DE TRANSPARÈNCIA AL FINAL DE L'INFORME:
+Afegeix sempre: "⚠️ Nota: Les seccions marcades com a 'CONTEXTUAL' es basen en el coneixement del model d'IA i poden no reflectir canvis corporatius d'última hora. Verifiqueu sempre les dades crítiques."
 """)
         
         formatted_prompt = prompt.format(
