@@ -12,8 +12,13 @@ logger = logging.getLogger(__name__)
 
 class ReportGenerator:
     def __init__(self):
-        # La API Key de Google es llegeix automàticament de GOOGLE_API_KEY a l'entorn
-        self.llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash-latest", temperature=0.2)
+        # Intentem agafar la clau directament de l'entorn per ser més robusts
+        api_key = os.getenv("GOOGLE_API_KEY")
+        self.llm = ChatGoogleGenerativeAI(
+            model="gemini-1.5-flash-latest", 
+            temperature=0.2,
+            google_api_key=api_key
+        )
         self.rag = RAGEngine()
         
     def generate_report(self, symbol: str, strategy_name: str, tech_reason: str, current_price: float, metrics: dict = None) -> str:
