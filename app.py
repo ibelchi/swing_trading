@@ -4,10 +4,18 @@ import tempfile
 import os
 import json
 from dotenv import load_dotenv
+import google.generativeai as genai
 
-# Carregar variables d'entorn al principi de tot
+# Carregar i configurar Google AI al principi de tot
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-load_dotenv(os.path.join(BASE_DIR, ".env"))
+env_path = os.path.join(BASE_DIR, ".env")
+load_dotenv(env_path)
+
+api_key = os.getenv("GOOGLE_API_KEY", "").strip()
+if api_key:
+    genai.configure(api_key=api_key)
+    os.environ["GOOGLE_API_KEY"] = api_key
+
 from src.database.db import SessionLocal, Opportunity, StrategyConfig
 from src.scanner.market_scanner import MarketScanner
 from src.ai.rag_engine import RAGEngine
