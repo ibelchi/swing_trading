@@ -15,11 +15,12 @@ class MarketScanner:
             BuyTheDipStrategy()
         ]
         
-    def run_scan(self, market: str = "sp500", limit_symbols: Optional[int] = None):
+    def run_scan(self, market: str = "sp500", limit_symbols: Optional[int] = None, on_opportunity_found=None):
         """
         Executes all active strategies over the appropriate market symbols.
         :param market: Market code to scan.
         :param limit_symbols: Limit the number of stocks to scan (useful for testing)
+        :param on_opportunity_found: Optional callback function triggered when an opportunity is found.
         """
         logger.info(f"Starting Market Scanner ({market})...")
         symbols = get_market_symbols(market)
@@ -80,6 +81,10 @@ class MarketScanner:
                             )
                             db.add(op)
                             db.commit()
+                            
+                            # Trigger UI callback if provided
+                            if on_opportunity_found:
+                                on_opportunity_found(sym, hist_data, result)
                             
                     except Exception as e:
                         logger.error(f"Error analyzing symbol {sym} with {strategy.name}: {e}")

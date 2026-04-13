@@ -16,8 +16,9 @@ if api_key:
     genai.configure(api_key=api_key)
     os.environ["GOOGLE_API_KEY"] = api_key
 
-from src.database.db import SessionLocal, Opportunity, StrategyConfig
+from src.database.db import SessionLocal, Opportunity, StrategyConfig, get_db
 from src.scanner.market_scanner import MarketScanner
+from src.ui.opportunity_chart import render_opportunity_chart
 from src.ai.rag_engine import RAGEngine
 from src.ai.report_generator import ReportGenerator
 from src.data.ingestion import get_company_info, get_historical_data
@@ -121,15 +122,27 @@ with tab_scanner:
         if start_btn:
             with st.spinner(f"Scanning {market_choice} market... This may take a while"):
                 scanner = MarketScanner()
-                try:
-                    scanner.run_scan(market=market_key, limit_symbols=limit if limit > 0 else None)
-                    st.success("Scan completed! Check the History tab for new opportunities.")
-                    st.balloons()
-                except Exception as e:
-                    st.error(f"⚠️ Critical error during scan: {e}")
-
-                except Exception as e:
-                    st.error(f"⚠️ Critical error during scan: {e}")
+                with st.status("Scanning in progress...", expanded=True) as status:
+                    st.write("Checking market symbols and downloading SPY context...")
+                    
+                    results_container = st.container()
+                    
+                    def live_chart_callback(symbol, hist, result):
+                        with results_container:
+                            st.success(f"New Opportunity Found: {symbol}")
+                            with st.expander(f"📈 View Analysis Chart — {symbol}", expanded=True):
+                                render_opportunity_chart(symbol, hist, result["metrics"])
+                    
+                    try:
+                        scanner.run_scan(
+                            market=market_key, 
+                            limit_symbols=limit if limit > 0 else None,
+                            on_opportunity_found=live_chart_callback
+                        )
+                        status.update(label="Scan completed!", state="complete", expanded=False)
+                        st.success("Scan finished! New opportunities have been saved to History.")
+                    except Exception as e:
+                        st.error(f"⚠️ Critical error during scan: {e}")
 
 # --- TAB HISTORY ---
 with tab_history:
@@ -214,6 +227,30 @@ with tab_history:
                 use_container_width=True,
                 hide_index=True
             )
+            
+            st.divider()
+            st.subheader("Visual Analysis & Reports")
+            
+            # Detailed Analysis with Charts
+            for op in opportunities:
+                with st.expander(f"📈 {op.symbol} — {op.company_name or op.symbol} ({op.date_detected.strftime('%Y-%m-%d')})"):
+                    col_info, col_chart = st.columns([1, 3])
+                    with col_info:
+                        st.write(f"**Strategy:** {op.strategy_name}")
+                        st.write(f"**Signal Price:** ${op.current_price:.2f}")
+                        st.write(f"**Market:** {op.market}")
+                        if st.button(f"Generate AI Report", key=f"btn_rep_{op.id}"):
+                            st.info("AI Report generation logic would go here.")
+                    
+                    with col_chart:
+                        # Lazy load historical data for the chart
+                        with st.spinner(f"Loading chart for {op.symbol}..."):
+                            # Fetch 2y to ensure we cover the period_high/low context
+                            h_data = get_historical_data(op.symbol, period="2y")
+                            if not h_data.empty:
+                                render_opportunity_chart(op.symbol, h_data, op.metrics)
+                            else:
+                                st.error("Could not fetch historical data for chart.")
             
             st.divider()
             st.subheader("🔍 On-Demand Research")
