@@ -5,7 +5,15 @@ from datetime import datetime
 
 # Define the project's base directory (one directory above this file)
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-DB_PATH = os.path.join(BASE_DIR, 'data', 'ai_investment_research.db')
+DB_PATH = os.path.join(BASE_DIR, 'data', 'radarcore.db')
+OLD_DB_PATH = os.path.join(BASE_DIR, 'data', 'ai_investment_research.db')
+
+# Automatic migration: rename old database if it exists
+if os.path.exists(OLD_DB_PATH) and not os.path.exists(DB_PATH):
+    try:
+        os.rename(OLD_DB_PATH, DB_PATH)
+    except Exception:
+        pass # If we can't rename, just let it create a new one
 
 # Create the data directory if it doesn't exist
 os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
@@ -30,6 +38,7 @@ class Opportunity(Base):
     metrics = Column(JSON, nullable=True)         # Numerical signal data
     market = Column(String(50), nullable=True)    # Index where found (sp500, ibex35, etc.)
     currency = Column(String(10), nullable=True)  # Currency (EUR, USD, etc.)
+    confidence = Column(Float, nullable=True)    # 0-100 score
 
 class StrategyConfig(Base):
     __tablename__ = 'strategy_configs'

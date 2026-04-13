@@ -23,8 +23,8 @@ from src.ai.report_generator import ReportGenerator
 from src.data.ingestion import get_company_info, get_historical_data
 
 # --- PAGE CONFIG ---
-st.set_page_config(page_title="AI Investment Research Terminal", layout="wide")
-st.title("📈 AI Investment Research Terminal")
+st.set_page_config(page_title="RadarCore", layout="wide")
+st.title("📡 RadarCore")
 
 # --- CUSTOM THEME (Purple & Red) ---
 st.markdown("""
@@ -109,8 +109,8 @@ with tab_scanner:
         market_choice = st.selectbox("Market to Scan:", list(market_options.keys()))
         market_key = market_options[market_choice]
         
-        if market_key in ["ibex35", "dax40", "eurostoxx50", "nifty50"]:
-            st.caption("ℹ️ Internal fixed list for stability. Last review: **April 2026**.")
+        if market_key in ["sp500", "ibex35", "dax40", "eurostoxx50", "nifty50"]:
+            st.caption("ℹ️ Internal fixed list/stable source for stability. Last review: **April 2026**.")
         else:
             st.caption("🟢 **Live** scanning against internet directories.")
             
@@ -128,20 +128,22 @@ with tab_scanner:
                 except Exception as e:
                     st.error(f"⚠️ Critical error during scan: {e}")
 
-    st.divider()
-    if st.button("Delete All History", type="secondary"):
-        db = SessionLocal()
-        try:
-            db.query(Opportunity).delete()
-            db.commit()
-            st.warning("The opportunities database has been cleared.")
-        finally:
-            db.close()
+                except Exception as e:
+                    st.error(f"⚠️ Critical error during scan: {e}")
 
 # --- TAB HISTORY ---
 with tab_history:
     st.header("Detected Opportunities")
     db = SessionLocal()
+    
+    # Auto-migration for confidence column
+    try:
+        from sqlalchemy import text
+        db.execute(text("ALTER TABLE opportunities ADD COLUMN confidence FLOAT"))
+        db.commit()
+    except Exception:
+        db.rollback() # Column likely already exists
+        
     try:
         opportunities = db.query(Opportunity).order_by(Opportunity.date_detected.desc()).limit(50).all()
         if not opportunities:
@@ -155,58 +157,62 @@ with tab_history:
 
             data = []
             for op in opportunities:
+                # Resolve technical metrics
+                m = op.metrics or {}
+                drop_val = m.get("drop_from_high_pct") or m.get("drop_pct", 0)
+                rebound_val = m.get("rebound_pct", 0)
+                pattern = m.get("pattern_type", "N/A")
+                # Defensive check for confidence (might not exist in old DBs)
+                confidence = getattr(op, 'confidence', 0.0) or 0.0
+
                 data.append({
-                    "ID": op.id,
-                    "Date": op.date_detected.strftime('%Y-%m-%d %H:%M'),
-                    "Market": op.market.upper() if op.market else "S&P500",
                     "Symbol": f"https://es.finance.yahoo.com/quote/{op.symbol}/",
                     "Company": op.company_name or op.symbol,
-                    "Strategy": op.strategy_name,
-                    "Price": fmt_curr(op.current_price, op.currency),
-                    "_symbol_real": op.symbol, # Used for database lookups
-                    "_drop": op.metrics.get("drop_pct", 0) if op.metrics else 0,
-                    "_rebound": op.metrics.get("rebound_pct", 0) if op.metrics else 0,
-                    "_lookback": op.metrics.get("lookback_days", 0) if op.metrics else 0
+                    "Drop %": f"{drop_val:.2f}%",
+                    "Rebound %": f"{rebound_val:.2f}%",
+                    "Pattern": pattern,
+                    "Conf.": f"{confidence:.1f}%",
+                    "Market": op.market.upper() if op.market else "S&P500",
+                    "Date": op.date_detected.strftime('%Y-%m-%d'),
+                    "_symbol_real": op.symbol, # For lookups
                 })
             
             df = pd.DataFrame(data)
             
-            # CSV Export Logic
-            csv_df = df.copy()
-            csv_df = csv_df.rename(columns={
-                "Date": "Date Detected",
-                "Market": "Market",
-                "Symbol": "Ticker",
-                "Company": "Company Name",
-                "Strategy": "Strategy",
-                "Price": "Price at Signal",
-                "_drop": "Drop (%)",
-                "_rebound": "Rebound (%)",
-                "_lookback": "Lookback Days"
-            })
-            # Clean ticker for CSV (remove the full URL)
-            csv_df["Ticker"] = csv_df["_symbol_real"]
-            csv_data = csv_df.drop(columns=["ID", "_symbol_real"]).to_csv(index=False).encode('utf-8')
-            
-            st.download_button(
-                label="📥 Download Full History (CSV)",
-                data=csv_data,
-                file_name="investment_history.csv",
-                mime="text/csv"
-            )
+            # Action Buttons Row
+            col_down, col_del = st.columns([1, 1])
+            with col_down:
+                # CSV Export Logic remains mostly same, just cleaner
+                csv_data = df.to_csv(index=False).encode('utf-8')
+                st.download_button(
+                    label="📥 Download Full History (CSV)",
+                    data=csv_data,
+                    file_name="radarcore_history.csv",
+                    mime="text/csv"
+                )
+            with col_del:
+                if st.button("🗑️ Delete All History", type="secondary"):
+                    db_del = SessionLocal()
+                    try:
+                        db_del.query(Opportunity).delete()
+                        db_del.commit()
+                        st.warning("History cleared!")
+                        st.rerun()
+                    finally:
+                        db_del.close()
 
             df = df.sort_values(by="Symbol") # Alphabetical sorting
             
             st.dataframe(
-                df.drop(columns=["ID", "_symbol_real", "_drop", "_rebound", "_lookback"]),
+                df.drop(columns=["_symbol_real"]),
                 column_config={
-                    "ID": None,  # Hide ID column
                     "Symbol": st.column_config.LinkColumn(
                         "Symbol",
                         display_text=r"https://es\.finance\.yahoo\.com/quote/(.*?)/"
                     )
                 },
-                use_container_width=True
+                use_container_width=True,
+                hide_index=True
             )
             
             st.divider()
@@ -247,7 +253,7 @@ with tab_history:
                                     
                                     # Save to reports/ folder
                                     os.makedirs("reports", exist_ok=True)
-                                    filename = f"reports/investment_report_{manual_ticker}_{pd.Timestamp.now().strftime('%y%m%d')}.md"
+                                    filename = f"reports/radarcore_report_{manual_ticker}_{pd.Timestamp.now().strftime('%y%m%d')}.md"
                                     with open(filename, "w", encoding="utf-8") as f:
                                         f.write(report)
                                     
@@ -282,7 +288,7 @@ with tab_history:
                                     
                                     # Save each individually to reports/
                                     os.makedirs("reports", exist_ok=True)
-                                    fname = f"reports/investment_report_{op.symbol}_{pd.Timestamp.now().strftime('%y%m%d')}.md"
+                                    fname = f"reports/radarcore_report_{op.symbol}_{pd.Timestamp.now().strftime('%y%m%d')}.md"
                                     with open(fname, "w", encoding="utf-8") as f:
                                         f.write(report_content)
                                         
@@ -296,7 +302,7 @@ with tab_history:
                         st.download_button(
                             label="📥 Download all reports (.md)",
                             data=all_reports,
-                            file_name="investment_reports.md",
+                            file_name="radarcore_reports.md",
                             mime="text/markdown"
                         )
             
@@ -307,7 +313,7 @@ with tab_history:
                     st.download_button(
                         label=f"📥 Download {st.session_state['manual_ticker_status']} Report",
                         data=st.session_state['manual_report'],
-                        file_name=f"investment_report_{st.session_state['manual_ticker_status']}_{pd.Timestamp.now().strftime('%y%m%d')}.md",
+                        file_name= f"radarcore_report_{st.session_state['manual_ticker_status']}_{pd.Timestamp.now().strftime('%y%m%d')}.md",
                         mime="text/markdown"
                     )
     finally:

@@ -6,22 +6,8 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-def get_sp500_symbols() -> list:
-    """Gets the current list of S&P 500 symbols from Wikipedia."""
-    try:
-        url = 'https://en.wikipedia.org/wiki/List_of_S%26P_500_companies'
-        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
-        response = requests.get(url, headers=headers)
-        response.raise_for_status()
-        
-        tables = pd.read_html(StringIO(response.text))
-        df = tables[0]
-        # Some symbols have dots instead of hyphens in yfinance (e.g., BRK.B -> BRK-B)
-        symbols = df['Symbol'].str.replace('.', '-', regex=False).tolist()
-        return symbols
-    except Exception as e:
-        logger.error(f"Error obtaining S&P 500 symbols: {e}")
-        return []
+# Redundant function removed for stability - S&P 500 now in hardcoded_markets
+
 
 def get_market_symbols(market: str) -> list:
     """
@@ -30,10 +16,8 @@ def get_market_symbols(market: str) -> list:
     """
     market = market.lower()
     
-    if market == "sp500":
-        return get_sp500_symbols()
-        
     hardcoded_markets = {
+        "sp500": ["AAPL", "MSFT", "AMZN", "NVDA", "GOOGL", "GOOG", "META", "BRK-B", "TSLA", "V", "UNH", "LLY", "JPM", "AVGO", "MA", "XOM", "JNJ", "HD", "PG", "COST", "ABBV", "ORCL", "MRK", "AMD", "CRM", "BAC", "CVX", "ADBE", "NFLX", "TMO", "WMT", "WFC", "PEP", "DIS", "ACN", "CSCO", "LIN", "ABT", "INTC", "INTU", "MCD", "VZ", "PYPL", "CMCSA", "TXN", "PM", "CAT", "PFE", "COP", "AMAT", "MDLZ", "QCOM", "UNP", "LOW", "IBM", "SPGI", "HON", "GE", "AMGN", "INTU", "NOW", "PLD", "AXP", "T", "ELV", "SYK", "GS", "ISRG", "BLK", "TJX", "DE", "LRCX", "GILD", "VRTX", "BKNG", "MDLZ", "TJX", "MMC", "REGN", "LMT", "ADI", "SCHW", "ZTS", "PGR", "C", "MO", "CB", "PANW", "FI", "CI", "MU", "BSX", "CI", "HUM", "DELL", "LRCX", "ADI"],
         "ibex35": ["ANA.MC", "ACX.MC", "ACS.MC", "AENA.MC", "AMS.MC", "MTS.MC", "SAB.MC", "SAN.MC", "BKT.MC", "BBVA.MC", "CABK.MC", "CLNX.MC", "ENG.MC", "ELE.MC", "FER.MC", "FDR.MC", "GRIF.MC", "IAG.MC", "IBE.MC", "ITX.MC", "IDR.MC", "COL.MC", "LOG.MC", "MAP.MC", "MEL.MC", "MRL.MC", "NTGY.MC", "PUI.MC", "REP.MC", "ROVI.MC", "SCYR.MC", "SOL.MC", "TEF.MC", "UNI.MC"],
         "dax40": ["ADS.DE", "ALV.DE", "BAS.DE", "BAYN.DE", "BEI.DE", "BMW.DE", "BNR.DE", "CBK.DE", "CON.DE", "1COV.DE", "DTG.DE", "DBK.DE", "DB1.DE", "DPW.DE", "DTE.DE", "EOAN.DE", "FRE.DE", "HNR1.DE", "HEI.DE", "HEN3.DE", "IFX.DE", "MRK.DE", "MBG.DE", "MTX.DE", "MUV2.DE", "PAH3.DE", "PUM.DE", "QIA.DE", "RHM.DE", "RWE.DE", "SAP.DE", "SRT.DE", "SIE.DE", "ENR.DE", "SHL.DE", "SY1.DE", "VOW3.DE", "VNA.DE", "ZAL.DE"],
         "eurostoxx50": ["ADS.DE", "ADYEN.AS", "AD.AS", "AI.PA", "ALV.DE", "ABI.BR", "ASML.AS", "CS.PA", "BAS.DE", "BAYN.DE", "BBVA.MC", "SAN.MC", "BMW.DE", "BNP.PA", "CRG.IR", "DTE.DE", "DPW.DE", "ENEL.MI", "ENI.MI", "FLTR.IR", "EL.PA", "RMS.PA", "IBE.MC", "ITX.MC", "IFX.DE", "INGA.AS", "ISP.MI", "KER.PA", "OR.PA", "MC.PA", "MBG.DE", "MUV2.DE", "PHIA.AS", "PRX.AS", "SAF.PA", "SAN.PA", "SAP.DE", "SU.PA", "SIE.DE", "STE.PA", "STMPA.PA", "TTE.PA", "VCI.PA", "VOW3.DE", "VNA.DE", "NOKIA.HE"],

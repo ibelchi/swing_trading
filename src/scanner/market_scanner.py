@@ -32,6 +32,13 @@ class MarketScanner:
             
         logger.info(f"Scanning {len(symbols)} symbols...")
         
+        # Download SPY data once for systemic market analysis
+        spy_data = get_historical_data("SPY", period="2y")
+        if spy_data.empty:
+            logger.warning("Could not download SPY data. Relative market analysis will be disabled.")
+        else:
+            logger.info("SPY data downloaded successfully for market context.")
+        
         db = SessionLocal()
         try:
             for strategy in self.strategies:
@@ -54,7 +61,7 @@ class MarketScanner:
                             continue
                             
                         # Execute plugin strategy logic
-                        result = strategy.analyze(sym, hist_data, info_data, config)
+                        result = strategy.analyze(sym, hist_data, info_data, config, spy_hist_data=spy_data)
                         
                         if result.get("is_opportunity"):
                             logger.info(f"-> 🟢 SUCCESS {sym} | Conf: {result.get('confidence')}% | Reason: {result.get('reason')}")

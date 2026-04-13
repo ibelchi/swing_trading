@@ -1,7 +1,7 @@
 @echo off
-title AI Investment Research Terminal
+title RadarCore
 echo ===================================================
-echo Starting the AI Investment Research Terminal...
+echo Starting RadarCore...
 echo ===================================================
 echo.
 echo Loading virtual environment and Streamlit...

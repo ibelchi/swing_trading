@@ -1,4 +1,4 @@
-# AI Investment Research Terminal (Swing Trading)
+# RadarCore (Swing Trading Intelligence)
 
 An autonomous assistant designed to scan the stock market (S&P 500, NASDAQ 100, and more), identify parametric "Buy the Dip" swing trading opportunities, and explain the market context by combining technical analysis with personal investment knowledge (RAG).
 

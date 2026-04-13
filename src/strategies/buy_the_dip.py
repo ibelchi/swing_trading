@@ -1,108 +1,174 @@
+from typing import Any, Dict, Optional
 import pandas as pd
-from typing import Dict, Any, Optional
 from .strategy_base import StrategyBase
 
 class BuyTheDipStrategy(StrategyBase):
-    
+    """
+    BuyTheDipStrategy — RadarCore (Swing Trading Intelligence)
+    ==========================================================
+    Improved version:
+    1. Corrected drop calculation (High to Period Low).
+    2. Pattern detection (L-BASE, V-RECOVERY, EARLY).
+    3. Relative market filter (Systemic vs Idiosyncratic).
+    4. Enhanced confidence formula.
+    """
+
     @property
     def name(self) -> str:
         return "Buy the Recovery (Swing)"
-        
+
     @property
     def default_parameters(self) -> Dict[str, Any]:
         return {
-            "min_drop_pct": 15.0,        # Minimum drop from high
-            "lookback_days": 60,         # Window of days to observe the high
-            "min_rebound_pct": 2.0,      # Must rise a minimum of 2% from the bottom to confirm trend change
-            "min_market_cap_b": 10.0,    # Minimum capitalization in Billions
-            "min_volume_m": 1.0          # Minimum daily volume in Millions
+            "min_drop_pct": 15.0,       # Minimum drop from high to period low
+            "lookback_days": 60,         # Window to search for the high
+            "min_rebound_pct": 2.0,      # Minimum rebound from low to confirm turn
+            "min_market_cap_b": 10.0,    # Min market cap in Billions
+            "min_volume_m": 1.0,         # Min daily volume in Millions
+            # --- New pattern detection parameters ---
+            "base_window_days": 10,      # Days to analyze for lateral consolidation (L)
+            "base_range_pct": 8.0,       # Max range (%) for lateral base
+            "min_base_days": 10,         # Minimum days since low to classify as L-BASE
+            "min_v_rebound_pct": 5.0,    # Minimum rebound for V-RECOVERY
+            # --- Market filter ---
+            "min_relative_drop_pct": 5.0 # Min relative drop vs SPY to be non-systemic
         }
-        
-    def analyze(self, symbol: str, hist_data: pd.DataFrame, info_data: dict, config: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+
+    def analyze(
+        self,
+        symbol: str,
+        hist_data: pd.DataFrame,
+        info_data: dict,
+        config: Optional[Dict[str, Any]] = None,
+        spy_hist_data: Optional[pd.DataFrame] = None
+    ) -> Dict[str, Any]:
         """
-        Detects stocks that have fallen from their recent high but have
-        already started to rebound from a low.
+        Detects stocks that have fallen and started recovering, classifying as L-BASE, V-RECOVERY or EARLY.
         """
         p = self.default_parameters.copy()
         if config:
             p.update(config)
-            
+
         result = {
             "is_opportunity": False,
             "confidence": 0.0,
             "current_price": 0.0,
             "reason": ""
         }
-        
+
         if hist_data.empty or len(hist_data) < p["lookback_days"]:
             result["reason"] = f"Not enough historical data to analyze {symbol}"
             return result
-            
-        current_price = hist_data['Close'].iloc[-1]
+
+        current_price = float(hist_data["Close"].iloc[-1])
         result["current_price"] = current_price
-        
-        # 1. Company filter checks (Market Cap & Volume)
-        market_cap = info_data.get("market_cap", 0) / 1e9 # In Billions
-        avg_volume_10d = hist_data['Volume'].tail(10).mean() / 1e6 # In Millions
-        
+
+        # 1. Liquidity filter
+        market_cap = info_data.get("market_cap", 0) / 1e9
+        avg_volume_10d = hist_data["Volume"].tail(10).mean() / 1e6
+
         if market_cap < p["min_market_cap_b"]:
-            result["reason"] = f"Market capitalization too low ({market_cap:.1f}B < {p['min_market_cap_b']}B)"
+            result["reason"] = f"Market cap too low ({market_cap:.1f}B < {p['min_market_cap_b']}B)"
             return result
-            
+
         if avg_volume_10d < p["min_volume_m"]:
-            result["reason"] = f"Trading volume too low ({avg_volume_10d:.1f}M < {p['min_volume_m']}M)"
+            result["reason"] = f"Volume too low ({avg_volume_10d:.1f}M < {p['min_volume_m']}M)"
             return result
-            
-        # 2. Càlcul de caiguda i fons
-        # Històric de X dies anteriors sense incloure avui (o depèn de preferències)
-        recent_data = hist_data.tail(p["lookback_days"])
-        period_high = recent_data['High'].max()
-        period_low = recent_data['Low'].min()
-        
-        # Calculate devaluation from high relative to current price
-        drop_pct = ((period_high - current_price) / period_high) * 100
-        
-        # 3. Calculate current rebound
-        # Check if from the bottom (period_low) it has rebounded indicating start of "recovery"
+
+        # 2. Key Drop & Rebound calculations
+        recent_data = hist_data.tail(p["lookback_days"]).copy()
+        period_high = float(recent_data["High"].max())
+        period_low = float(recent_data["Low"].min())
+        high_idx = recent_data["High"].idxmax()
+        low_idx = recent_data["Low"].idxmin()
+
+        drop_from_high_pct = ((period_high - period_low) / period_high) * 100
+        drop_pct_current = ((period_high - current_price) / period_high) * 100
         rebound_pct = ((current_price - period_low) / period_low) * 100
-        
+
+        if drop_from_high_pct < p["min_drop_pct"]:
+            result["reason"] = f"Insufficient drop ({drop_from_high_pct:.1f}% < {p['min_drop_pct']}%)."
+            return result
+
+        if rebound_pct < p["min_rebound_pct"]:
+            result["reason"] = f"No confirmed turn (rebound {rebound_pct:.1f}% < {p['min_rebound_pct']}%)."
+            return result
+
+        # 3. Pattern classification
+        base_window = p["base_window_days"]
+        last_n_days = hist_data.tail(base_window)
+        max_last_n = float(last_n_days["High"].max())
+        min_last_n = float(last_n_days["Low"].min())
+        rang_base_pct = ((max_last_n - min_last_n) / min_last_n) * 100 if min_last_n > 0 else 99.0
+
+        low_position = recent_data.index.get_loc(low_idx)
+        dies_des_del_minim = len(recent_data) - low_position - 1
+
+        if rang_base_pct < p["base_range_pct"] and dies_des_del_minim >= p["min_base_days"]:
+            pattern_type = "L-BASE"
+        elif rebound_pct >= p["min_v_rebound_pct"] and rang_base_pct >= p["base_range_pct"]:
+            pattern_type = "V-RECOVERY"
+        else:
+            pattern_type = "EARLY"
+
+        # 4. Market filter (SPY)
+        is_systemic = None
+        relative_drop_pct = None
+        spy_drop_pct = None
+
+        if spy_hist_data is not None and not spy_hist_data.empty:
+            try:
+                spy_period = spy_hist_data.loc[(spy_hist_data.index >= high_idx) & (spy_hist_data.index <= low_idx)]
+                if not spy_period.empty:
+                    spy_high = float(spy_period["High"].iloc[0])
+                    spy_low = float(spy_period["Low"].min())
+                    spy_drop_pct = ((spy_high - spy_low) / spy_high) * 100 if spy_high > 0 else 0.0
+                    relative_drop_pct = drop_from_high_pct - spy_drop_pct
+                    is_systemic = relative_drop_pct < p["min_relative_drop_pct"]
+            except:
+                is_systemic = None
+
         result["metrics"] = {
-            "period_high": float(period_high),
-            "period_low": float(period_low),
-            "drop_pct": float(drop_pct),
-            "rebound_pct": float(rebound_pct),
+            "period_high": period_high,
+            "period_low": period_low,
+            "drop_pct": round(drop_pct_current, 2),
+            "rebound_pct": round(rebound_pct, 2),
             "lookback_days": p["lookback_days"],
-            "market_cap": float(market_cap),
-            "volume": float(avg_volume_10d),
+            "market_cap": round(market_cap, 2),
+            "volume": round(avg_volume_10d, 2),
             "per": info_data.get("per", 0),
             "eps": info_data.get("eps", 0),
             "dividend_yield": info_data.get("dividend_yield", 0),
-            "next_earnings": info_data.get("next_earnings", "Unknown")
+            "next_earnings": info_data.get("next_earnings", "Unknown"),
+            "drop_from_high_pct": round(drop_from_high_pct, 2),
+            "pattern_type": pattern_type,
+            "dies_des_del_minim": dies_des_del_minim,
+            "rang_base_pct": round(rang_base_pct, 2),
+            "is_systemic": is_systemic,
+            "spy_drop_pct": round(spy_drop_pct, 2) if spy_drop_pct is not None else None,
+            "relative_drop_pct": round(relative_drop_pct, 2) if relative_drop_pct is not None else None,
         }
+
+        # 5. Enhanced Confidence
+        conf_drop = min(drop_from_high_pct / 40.0, 1.0) * 0.30
+        conf_rebound = min(rebound_pct / 10.0, 1.0) * 0.20
+        conf_pattern = 0.25 if pattern_type == "L-BASE" else (0.15 if pattern_type == "V-RECOVERY" else 0.05)
+        conf_market = 0.25 if is_systemic is False else (0.10 if is_systemic is None else 0.0)
         
-        if drop_pct < p["min_drop_pct"]:
-            result["reason"] = f"Has not fallen enough from recent high ({drop_pct:.1f}% < {p['min_drop_pct']}%). Period High: ${period_high:.2f}, Current Price: ${current_price:.2f}"
-            return result
-            
-        if rebound_pct < p["min_rebound_pct"]:
-            result["reason"] = f"No sign that the bleeding has ended (rebound of {rebound_pct:.1f}% < {p['min_rebound_pct']}%)."
-            return result
-            
-        # Also maybe we are not interested if it has already risen too much from the bottom (> e.g. a percent of the drop).
-        # Simple implementation for now.
-        
-        # If we reached here, it's an "entry opportunity!"
+        result["confidence"] = round((conf_drop + conf_rebound + conf_pattern + conf_market) * 100, 2)
         result["is_opportunity"] = True
-        
-        # Rudimentary "Confidence" formula
-        # More drop and a robust (but not excessive) rebound = more confidence.
-        conf_drop = min(drop_pct / 30.0, 1.0) * 0.6  # 60% weight
-        conf_rebound = min(rebound_pct / 5.0, 1.0) * 0.4 # 40% weight
-        result["confidence"] = round((conf_drop + conf_rebound) * 100, 2)
-        
+
+        systemic_note = ""
+        if is_systemic is True:
+            systemic_note = f" ⚠️ WARNING: systemic drop (relative: {relative_drop_pct:.1f}%)."
+        elif is_systemic is False:
+            systemic_note = f" ✅ Idiosyncratic drop (+{relative_drop_pct:.1f}% vs SPY)."
+
         result["reason"] = (
-            f"Buy the Recovery opportunity detected in {symbol}. "
-            f"The value has fallen {drop_pct:.1f}% from its recent {p['lookback_days']}-day high (${period_high:.2f}). "
-            f"Currently priced at ${current_price:.2f}, having rebounded {rebound_pct:.1f}% from the local low (${period_low:.2f}), validating the start of a recovery."
+            f"Opportunity '{pattern_type}' detected in {symbol}. "
+            f"Dropped {drop_from_high_pct:.1f}% from high. "
+            f"Price: ${current_price:.2f}, rebound: {rebound_pct:.1f}%."
+            f"{systemic_note}"
         )
+
         return result
