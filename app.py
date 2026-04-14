@@ -29,18 +29,46 @@ LOGO_PATH = "assets/logo.png"
 
 # --- PAGE CONFIG ---
 st.set_page_config(
-    page_title=f"RadarCore {VERSION}", 
+    page_title=f"radarcore {VERSION}", 
     layout="wide", 
     page_icon=LOGO_PATH
 )
 
-# --- HEADER / BRANDING ---
-col_logo, col_text = st.columns([0.07, 0.93])
-with col_logo:
-    st.image(LOGO_PATH, width=60)
-with col_text:
-    st.markdown(f"<h1 style='margin-top: -10px;'>RadarCore</h1>", unsafe_allow_html=True)
-    st.caption("Swing Trading Intelligence Engine")
+# Custom CSS for circular logo and refined header
+st.markdown("""
+    <style>
+    /* Make the logo circular to blend with dark mode */
+    [data-testid="stImage"] img {
+        border-radius: 50%;
+    }
+    /* Header styling */
+    .header-text {
+        font-size: 3.5rem !important;
+        font-weight: 700 !important;
+        margin-top: -15px !important;
+        letter-spacing: -1px;
+    }
+    </style>
+""", unsafe_allow_html=True)
+
+import base64
+
+def get_base64_img(path):
+    with open(path, "rb") as f:
+        data = f.read()
+    return base64.b64encode(data).decode()
+
+# --- HEADER / BRANDING (Ultra-Compact & Centered) ---
+try:
+    base64_logo = get_base64_img(LOGO_PATH)
+    st.markdown(f"""
+        <div style='display: flex; flex-direction: column; align-items: center; justify-content: center; margin-top: -30px; margin-bottom: 20px;'>
+            <img src='data:image/png;base64,{base64_logo}' width='60' style='border-radius: 50%;'>
+            <h1 style='margin: 0; padding: 0; font-size: 1.8rem; line-height: 1.2;'>radarcore</h1>
+        </div>
+    """, unsafe_allow_html=True)
+except:
+    st.markdown("<h1 style='text-align: center;'>radarcore</h1>", unsafe_allow_html=True)
 
 # --- CUSTOM THEME (Purple & Red) ---
 # ... (rest of CSS)
@@ -74,8 +102,7 @@ st.markdown("""
 
 # --- SIDEBAR: SETTINGS ---
 with st.sidebar:
-    st.image(LOGO_PATH, width=80)
-    st.title("RadarCore Settings")
+    st.title("Settings")
     st.divider()
     st.subheader("AI Configuration")
     ai_provider = st.radio("AI Provider", ["Google Gemini", "OpenAI"], index=0)

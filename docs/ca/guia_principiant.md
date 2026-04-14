@@ -1,6 +1,6 @@
-# RadarCore: Guia d'Inversió (Conceptes i Pràctica)
+# radarcore: Guia d'Inversió (Conceptes i Pràctica)
 
-Benvingut a **RadarCore**. Aquest manual t'ajudarà a entendre com funciona l'estratègia **Buy the Recovery** (Comprar la Recuperació) i com pots utilitzar aquest programari per aprendre sobre finances i swing trading des de zero.
+Benvingut a **radarcore**. Aquest manual t'ajudarà a entendre com funciona l'estratègia **Buy the Recovery** (Comprar la Recuperació) i com pots utilitzar aquest programari per aprendre sobre finances i swing trading des de zero.
 
 ---
 

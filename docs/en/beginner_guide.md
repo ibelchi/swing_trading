@@ -1,6 +1,6 @@
-# RadarCore: Investment Guide (Concepts & Practice)
+# radarcore: Investment Guide (Concepts & Practice)
 
-Welcome to **RadarCore**. This manual will help you understand how the **Buy the Recovery** strategy works and how you can use this software to learn about finance and swing trading from scratch.
+Welcome to **radarcore**. This manual will help you understand how the **Buy the Recovery** strategy works and how you can use this software to learn about finance and swing trading from scratch.
 
 ---
 

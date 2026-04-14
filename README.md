@@ -1,6 +1,8 @@
-# RadarCore (Swing Trading Intelligence)
+<p align="center">
+  <img src="assets/logo.png" width="120" alt="radarcore logo">
+</p>
 
-An autonomous assistant designed to scan the stock market (S&P 500, NASDAQ 100, and more), identify parametric "Buy the Dip" swing trading opportunities, and explain the market context by combining technical analysis with personal investment knowledge (RAG).
+# radarcore (Swing Trading Intelligence)
 
 ## Features
 

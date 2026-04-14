@@ -1,7 +1,7 @@
-# RadarCore: Especificació Tècnica (Swing Trading Engine)
+# radarcore: Especificació Tècnica (Swing Trading Engine)
 
 Documentació orientada a l'analista financer i dissenyadors d'algoritmes quantitatius.
-RadarCore és una terminal d'anàlisi basada en algoritmes de reversió a la mitjana (*Mean Reversion*) dins d'una tàctica de **Buy the Recovery**.
+radarcore és una terminal d'anàlisi basada en algoritmes de reversió a la mitjana (*Mean Reversion*) dins d'una tàctica de **Buy the Recovery**.
 
 ---
 

@@ -1,7 +1,7 @@
-# RadarCore: Technical Specification (Swing Trading Engine)
+# radarcore: Technical Specification (Swing Trading Engine)
 
 Documentation oriented towards financial analysts and quantitative algorithm designers.
-RadarCore is an analysis terminal built around Mean Reversion algorithms within a **Buy the Recovery** framework.
+radarcore is an analysis terminal built around Mean Reversion algorithms within a **Buy the Recovery** framework.
 
 ---
 
