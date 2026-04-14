@@ -23,11 +23,28 @@ from src.ai.rag_engine import RAGEngine
 from src.ai.report_generator import ReportGenerator
 from src.data.ingestion import get_company_info, get_historical_data
 
+# --- CONSTANTS ---
+VERSION = "1.0.0"
+LOGO_PATH = "assets/logo.png"
+
 # --- PAGE CONFIG ---
-st.set_page_config(page_title="RadarCore", layout="wide")
-st.title("RadarCore")
+st.set_page_config(
+    page_title=f"RadarCore {VERSION}", 
+    layout="wide", 
+    page_icon=LOGO_PATH
+)
+
+# --- HEADER / BRANDING ---
+col_logo, col_text = st.columns([0.07, 0.93])
+with col_logo:
+    st.image(LOGO_PATH, width=60)
+with col_text:
+    st.markdown(f"<h1 style='margin-top: -10px;'>RadarCore</h1>", unsafe_allow_html=True)
+    st.caption("Swing Trading Intelligence Engine")
 
 # --- CUSTOM THEME (Purple & Red) ---
+# ... (rest of CSS)
+# ... (rest of CSS)
 st.markdown("""
 <style>
     /* Primary buttons as Pastel Purple/Lavender */
@@ -57,7 +74,9 @@ st.markdown("""
 
 # --- SIDEBAR: SETTINGS ---
 with st.sidebar:
-    st.header("Global Settings")
+    st.image(LOGO_PATH, width=80)
+    st.title("RadarCore Settings")
+    st.divider()
     st.subheader("AI Configuration")
     ai_provider = st.radio("AI Provider", ["Google Gemini", "OpenAI"], index=0)
     
@@ -82,6 +101,9 @@ with st.sidebar:
         index=0,
         help="Select the language for the AI-generated research reports."
     )
+
+    st.divider()
+    st.caption(f"RadarCore - Build Version: {VERSION}")
 
 # --- TABS ---
 tab_scanner, tab_history, tab_knowledge = st.tabs([
