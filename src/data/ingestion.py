@@ -3,6 +3,8 @@ import pandas as pd
 import requests
 from io import StringIO
 import logging
+import time
+import random
 
 logger = logging.getLogger(__name__)
 
@@ -53,38 +55,37 @@ def get_market_symbols(market: str) -> list:
             
     return []
 
-# Shared session to avoid being blocked by Yahoo Finance and improve performance
-_SHARED_SESSION = requests.Session()
-_SHARED_SESSION.headers.update({
-    'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
-})
+# We use individual requests for stability, but allowing yfinance to handle 
+# its own internal rate limiting and sessions.
 
 class RateLimitException(Exception):
     pass
 
-def get_historical_data(symbol: str, period: str = "1y", retries: int = 1) -> pd.DataFrame:
+def get_historical_data(symbol: str, period: str = "1y", retries: int = 3) -> pd.DataFrame:
     """
     Gets EOD (End of Day) historical data for a specific symbol with retry logic.
     """
     for attempt in range(retries + 1):
         try:
-            ticker = yf.Ticker(symbol, session=_SHARED_SESSION)
+            # 1. Use ticker.history (it is more robust recently)
+            ticker = yf.Ticker(symbol)
             df = ticker.history(period=period)
             
             if not df.empty:
                 return df
                 
-            # If empty, try fallback download
+            # 2. Second attempt: Direct download (no session) if empty
             df = yf.download(symbol, period=period, progress=False, timeout=10)
             if not df.empty:
                 return df
 
         except Exception as e:
             err_msg = str(e).lower()
-            if "too many requests" in err_msg or "429" in err_msg or "ratelimit" in err_msg:
+            if "too many requests" in err_msg or "429" in err_msg or "rate limit" in err_msg:
                 if attempt == retries:
-                    raise RateLimitException(f"Yahoo Finance blocked your connection (Rate Limited) on {symbol}")
-                time.sleep(5)
+                    raise RateLimitException(f"Yahoo Finance blocked (429) connection for {symbol}")
+                # Wait longer on each attempt with random jitter
+                time.sleep(5 + random.uniform(1, 4))
             else:
                 logger.error(f"Error obtaining data for {symbol}: {str(e)}")
             
@@ -96,38 +97,40 @@ def get_historical_data(symbol: str, period: str = "1y", retries: int = 1) -> pd
     return pd.DataFrame()
 
 def get_company_info(symbol: str) -> dict:
-    """Gets basic company information (market cap, sector, etc.)."""
+    """
+    Gets base info (Market Cap, Currency) FAST. 
+    Avoids .info as much as possible to prevent 429 errors.
+    """
     try:
-        # Using Ticker with shared session
-        ticker = yf.Ticker(symbol, session=_SHARED_SESSION)
-        info = ticker.info
+        ticker = yf.Ticker(symbol)
+        v = ticker.fast_info
         
-        if not info or len(info) < 5:
-            logger.warning(f"No sufficient info data for {symbol}")
-            return {}
-            
-        # Extra fundamental metrics
-        earnings_date = info.get("nextEarningsDate")
-        if earnings_date:
-            try:
-                # Convert timestamp to readable string (YYYY-MM-DD)
-                earnings_str = pd.to_datetime(earnings_date, unit='s').strftime('%Y-%m-%d')
-            except:
-                earnings_str = "Unknown"
-        else:
-            earnings_str = "Unknown"
-
         return {
-            "market_cap": info.get("marketCap", 0),
+            "market_cap": getattr(v, "market_cap", 0),
+            "short_name": symbol,
+            "currency": getattr(v, "currency", "USD"),
+            "sector": "Scanning...",
+            "industry": "Scanning...",
+            "per": 0, "eps": 0, "dividend_yield": 0, "next_earnings": "TBD"
+        }
+    except Exception as e:
+        logger.warning(f"Fast info failed for {symbol}: {e}")
+        return {"market_cap": 0, "short_name": symbol, "currency": "USD"}
+
+def get_detailed_info(symbol: str) -> dict:
+    """
+    Called only for identified opportunities. Fetches full metadata.
+    """
+    try:
+        ticker = yf.Ticker(symbol)
+        info = ticker.info
+        return {
             "sector": info.get("sector", "Unknown"),
             "industry": info.get("industry", "Unknown"),
-            "short_name": info.get("shortName") or info.get("longName") or symbol,
-            "currency": info.get("currency", "USD"),
+            "short_name": info.get("shortName") or symbol,
             "per": info.get("trailingPE", 0),
             "eps": info.get("forwardEps", 0),
             "dividend_yield": info.get("dividendYield", 0),
-            "next_earnings": earnings_str
         }
-    except Exception as e:
-        logger.error(f"Error obtaining company information for {symbol}: {e}")
+    except Exception:
         return {}

@@ -31,7 +31,8 @@ ENV/
 env.bak/
 venv.bak/
 
-# SQLite Database / Data (We don't want to push personal history and embeddings)
+# Temp data and reports
+reports/
 data/
 *.db
 *.sqlite3

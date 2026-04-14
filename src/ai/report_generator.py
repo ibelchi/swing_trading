@@ -12,7 +12,7 @@ load_dotenv()
 logger = logging.getLogger(__name__)
 
 class ReportGenerator:
-    def __init__(self, provider: str = "google", model_name: str = "gemini-1.5-flash", api_key: str = None):
+    def __init__(self, provider: str = "google", model_name: str = "gemini-flash-latest", api_key: str = None):
         """
         Initializes the LLM report generator with multiple provider support.
         :param provider: 'google' or 'openai'
@@ -133,9 +133,25 @@ Always add a note indicating that sections marked as 'CONTEXTUAL' are based on t
             language=language
         )
         
-        try:
-            response = self.llm.invoke(formatted_prompt)
-            return response.content
-        except Exception as e:
-            logger.error(f"Error invoking LLM for reports: {e}")
-            return f"Error from AI generating the report ({e}). Check if your Google API Key is valid."
+        import time
+        for attempt in range(2): # Try twice
+            try:
+                response = self.llm.invoke(formatted_prompt)
+                content = response.content
+                if isinstance(content, list):
+                    # Concatenate all text parts if the response is a list
+                    content = "".join([part.get("text", "") if isinstance(part, dict) else str(part) for part in content])
+                return content
+            except Exception as e:
+                err_msg = str(e).lower()
+                if "resource_exhausted" in err_msg or "429" in err_msg:
+                    if attempt == 0:
+                        logger.warning(f"Rate limit hit for {symbol}. Retrying in 15s...")
+                        time.sleep(15)
+                        continue
+                    else:
+                        return f"Error: API Quota Exceeded (429). You are on a Free Tier and have exceeded the limits for this model. Please wait a minute or switch to 'gemini-flash-latest' which has higher limits."
+                
+                logger.error(f"Error invoking LLM for reports: {e}")
+                return f"Error from AI generating the report ({e}). Check if your Google API Key is valid."
+        return "Critical: Failed to generate report after retries."

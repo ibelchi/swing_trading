@@ -108,7 +108,7 @@ with st.sidebar:
     ai_provider = st.radio("AI Provider", ["Google Gemini", "OpenAI"], index=0)
     
     if ai_provider == "Google Gemini":
-        models = ["gemini-1.5-flash-latest", "gemini-1.5-pro-latest", "gemini-2.0-flash-exp"]
+        models = ["gemini-flash-latest", "gemini-pro-latest", "gemini-3.1-pro-preview", "gemini-2.5-flash", "gemini-2.0-flash"]
     else:
         models = ["gpt-4o", "gpt-4o-mini", "gpt-3.5-turbo"]
         
@@ -231,8 +231,7 @@ with tab_scanner:
                     with results_container:
                         if result.get("is_opportunity"):
                             st.success(f"New Opportunity Found: {symbol}")
-                            with st.expander(f"View Analysis Chart — {symbol}", expanded=True):
-                                render_opportunity_chart(symbol, hist, result["metrics"])
+                            st.toast(f"Opportunity for {symbol} added to History.", icon="🚀")
                         else:
                             # Log heartbeats/rejections for transparency
                             reason = result.get("reason", "Filtered")
@@ -327,7 +326,7 @@ with tab_history:
         db.rollback()
 
     try:
-        opportunities = db.query(Opportunity).order_by(Opportunity.date_detected.desc()).limit(50).all()
+        opportunities = db.query(Opportunity).order_by(Opportunity.date_detected.desc(), Opportunity.id.desc()).limit(50).all()
         if not opportunities:
             st.info("No market opportunities detected yet.")
         else:
@@ -392,15 +391,13 @@ with tab_history:
                 show_charts = st.button(
                     "View Charts", 
                     type="primary", 
-                    use_container_width=True,
-                    disabled=not selected_indices
+                    use_container_width=True
                 )
             with col_actions:
                 generate_batch = st.button(
                     "Generate Reports", 
                     type="primary", 
-                    use_container_width=True,
-                    disabled=not selected_indices
+                    use_container_width=True
                 )
             with col_del:
                 if st.button("Clear History", key="btn_clear_hist", use_container_width=True):
@@ -408,102 +405,112 @@ with tab_history:
                     db.commit()
                     st.rerun()
 
-            if show_charts and selected_indices:
-                ops_data = []
-                with st.spinner("Fetching charts..."):
-                    # Create a map for reliable lookup within the same rendering cycle
-                    id_map = {i: row["id"] for i, row in df_display.iterrows()}
-                    
-                    for idx in selected_indices:
-                        try:
-                            if idx not in id_map:
-                                st.error(f"Selection index {idx} out of range for current view.")
-                                continue
+            if show_charts:
+                if not selected_indices:
+                    st.warning("Please select at least one row from the history table above.")
+                else:
+                    ops_data = []
+                    with st.spinner("Fetching charts..."):
+                        # Create a map for reliable lookup within the same rendering cycle
+                        id_map = {i: row["id"] for i, row in df_display.iterrows()}
+                        
+                        for idx in selected_indices:
+                            try:
+                                if idx not in id_map:
+                                    st.error(f"Selection index {idx} out of range for current view.")
+                                    continue
+                                    
+                                selected_op_id = id_map[idx]
+                                op = db.query(Opportunity).filter(Opportunity.id == selected_op_id).first()
                                 
-                            selected_op_id = id_map[idx]
-                            op = db.query(Opportunity).filter(Opportunity.id == selected_op_id).first()
-                            
-                            if op:
-                                st.toast(f"Loading data for {op.symbol}...", icon="📊")
-                                h_data = get_historical_data(op.symbol, period="2y")
-                                
-                                if h_data.empty:
-                                    st.warning(f"Connection issue or no data available for {op.symbol} via Yahoo Finance.")
+                                if op:
+                                    st.toast(f"Loading data for {op.symbol}...", icon="📊")
+                                    h_data = get_historical_data(op.symbol, period="2y")
+                                    
+                                    if h_data.empty:
+                                        st.warning(f"Connection issue or no data available for {op.symbol} via Yahoo Finance.")
+                                    else:
+                                        ops_data.append({
+                                            "symbol": op.symbol, 
+                                            "title": op.company_name or op.strategy_name,
+                                            "metrics": op.metrics,
+                                            "hist": h_data
+                                        })
                                 else:
-                                    ops_data.append({
+                                    st.error(f"Opportunity ID {selected_op_id} not found in database.")
+                            except Exception as e:
+                                st.error(f"Critical error loading index {idx}: {e}")
+
+                    if ops_data:
+                        st.session_state['active_analysis'] = ops_data
+                        st.session_state['active_analysis_type'] = 'charts'
+                    elif not selected_indices:
+                        pass
+                    else:
+                        st.error("Charts could not be loaded. Please check your internet connection and ticker symbols.")
+
+            if generate_batch:
+                if not selected_indices:
+                    st.warning("Please select at least one row from the history table above.")
+                else:
+                    with st.spinner(f"Generating reports for {len(selected_indices)} symbols..."):
+                        reports_data = []
+                        # Create the same reliable map
+                        id_map = {i: row["id"] for i, row in df_display.iterrows()}
+                        
+                        report_gen = ReportGenerator(
+                            provider=provider_key, 
+                            model_name=ai_model, 
+                            api_key=user_api_key if user_api_key else None
+                        )
+                        
+                        for idx in selected_indices:
+                            try:
+                                if idx not in id_map:
+                                    st.error(f"Selection index {idx} out of range.")
+                                    continue
+                                    
+                                selected_op_id = id_map[idx]
+                                op = db.query(Opportunity).filter(Opportunity.id == selected_op_id).first()
+                                
+                                if op:
+                                    st.toast(f"AI Analyzing {op.symbol}...", icon="🧠")
+                                    content = report_gen.generate_report(
+                                        op.symbol, op.strategy_name, op.explanation, 
+                                        op.current_price, op.metrics, language=report_lang
+                                    )
+                                    
+                                    h_data = get_historical_data(op.symbol, period="2y")
+                                    full_content = f"# Analysis Report: {op.symbol}\n\n{content}\n\n---"
+                                    
+                                    reports_data.append({
                                         "symbol": op.symbol, 
                                         "title": op.company_name or op.strategy_name,
                                         "metrics": op.metrics,
-                                        "hist": h_data
+                                        "hist": h_data, 
+                                        "content": full_content
                                     })
-                            else:
-                                st.error(f"Opportunity ID {selected_op_id} not found in database.")
-                        except Exception as e:
-                            st.error(f"Critical error loading index {idx}: {e}")
-
-                if ops_data:
-                    st.session_state['active_analysis'] = ops_data
-                    st.session_state['active_analysis_type'] = 'charts'
-                elif not selected_indices:
-                    pass
-                else:
-                    st.error("Charts could not be loaded. Please check your internet connection and ticker symbols.")
-
-            if generate_batch and selected_indices:
-                with st.spinner(f"Generating reports for {len(selected_indices)} symbols..."):
-                    reports_data = []
-                    # Create the same reliable map
-                    id_map = {i: row["id"] for i, row in df_display.iterrows()}
-                    
-                    report_gen = ReportGenerator(
-                        provider=provider_key, 
-                        model_name=ai_model, 
-                        api_key=user_api_key if user_api_key else None
-                    )
-                    
-                    for idx in selected_indices:
-                        try:
-                            if idx not in id_map:
-                                st.error(f"Selection index {idx} out of range.")
-                                continue
-                                
-                            selected_op_id = id_map[idx]
-                            op = db.query(Opportunity).filter(Opportunity.id == selected_op_id).first()
+                                else:
+                                    st.error(f"Database mismatch for symbol at index {idx}.")
+                            except Exception as e:
+                                st.error(f"Analysis error for index {idx}: {e}")
                             
-                            if op:
-                                st.toast(f"AI Analyzing {op.symbol}...", icon="🧠")
-                                content = report_gen.generate_report(
-                                    op.symbol, op.strategy_name, op.explanation, 
-                                    op.current_price, op.metrics, language=report_lang
-                                )
-                                
-                                h_data = get_historical_data(op.symbol, period="2y")
-                                full_content = f"# Analysis Report: {op.symbol}\n\n{content}\n\n---"
-                                
-                                reports_data.append({
-                                    "symbol": op.symbol, 
-                                    "title": op.company_name or op.strategy_name,
-                                    "metrics": op.metrics,
-                                    "hist": h_data, 
-                                    "content": full_content
-                                })
-                            else:
-                                st.error(f"Database mismatch for symbol at index {idx}.")
-                        except Exception as e:
-                            st.error(f"Analysis error for index {idx}: {e}")
-                    
-                    if reports_data:
-                        merged_report = "\n\n".join([r["content"] for r in reports_data])
-                        os.makedirs("reports", exist_ok=True)
-                        merged_filename = f"reports/merged_report_{pd.Timestamp.now().strftime('%y%m%d_%H%M')}.md"
-                        with open(merged_filename, "w", encoding="utf-8") as f:
-                            f.write(merged_report)
+                            # Pause to avoid RPM (Requests Per Minute) limits for Google AI
+                            import time
+                            time.sleep(2.0)
                         
-                        st.session_state['active_analysis'] = reports_data
-                        st.session_state['active_analysis_type'] = 'reports'
-                        st.session_state['active_report_merged'] = merged_report
-                    else:
-                        st.error("Report generation failed. Verify your AI API settings.")
+                        if reports_data:
+                            merged_report = "\n\n".join([r["content"] for r in reports_data])
+                            os.makedirs("reports", exist_ok=True)
+                            merged_filename = f"reports/merged_report_{pd.Timestamp.now().strftime('%y%m%d_%H%M')}.md"
+                            with open(merged_filename, "w", encoding="utf-8") as f:
+                                f.write(merged_report)
+                            
+                            st.session_state['active_analysis'] = reports_data
+                            st.session_state['active_analysis_type'] = 'reports'
+                            st.session_state['active_report_merged'] = merged_report
+                        else:
+                            st.error("Report generation failed. Verify your AI API settings.")
 
             # --- RENDER RESULTS BELOW ---
             if 'active_analysis' in st.session_state and st.session_state['active_analysis']:
