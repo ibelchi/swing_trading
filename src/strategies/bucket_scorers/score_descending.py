@@ -35,8 +35,8 @@ class DescendingScorer(BaseBucketScorer):
         if vol_confirma:
             total_score += 20
             
-        forca = "forta" if total_score >= 60 else "moderada"
-        reasoning = f"Baixada {forca} - evitar entrada"
+        forca = "strong" if total_score >= 60 else "moderate"
+        reasoning = f"Descending {forca} - avoid entry"
         
         return {
             "score": min(100, total_score),

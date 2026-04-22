@@ -331,7 +331,7 @@ class PatternClassifier:
 
             if drop_to_pivot < 10:
                 result["phase"] = "NO_PATTERN"
-                result["phase_label"] = "⚪ Sense patró confiat"
+                result["phase_label"] = "⚪ No confident pattern"
                 return result
 
             # 3. REFERÈNCIES
@@ -347,16 +347,16 @@ class PatternClassifier:
             # 5. FASE
             if progress_pct < 20:
                 phase = "VALLEY"
-                phase_label = "🟢 Inici — màxim recorregut, màxim risc"
+                phase_label = "🟢 Early Stage — maximum potential, maximum risk"
             elif progress_pct < 65:
                 phase = "MID"
-                phase_label = "🟡 Sweet spot — tendència confirmada"
+                phase_label = "🟡 Sweet spot — confirmed trend"
             elif progress_pct < 85:
                 phase = "MATURE"
-                phase_label = "🟠 Madur — poc upside restant"
+                phase_label = "🟠 Mature — limited upside remaining"
             else:
                 phase = "LATE"
-                phase_label = "🔴 Tard — ja no és candidat"
+                phase_label = "🔴 Late — no longer a candidate"
 
             # 6. UPSIDES
             upside_to_ath3y = (ath_3y - current) / current * 100 if current > 0 else 0

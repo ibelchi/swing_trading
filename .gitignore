@@ -45,9 +45,3 @@ vector_store/
 
 # Custom UI
 .streamlit/secrets.toml
-
-# Additions from security audit
-.env*
-*.sqlite
-.pytest_cache/
-scratch/

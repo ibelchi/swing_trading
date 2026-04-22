@@ -124,7 +124,7 @@ class UniverseFilter:
 
         # Comprovació de seguretat bàsica
         if hist_data is None or hist_data.empty:
-            result["reason"] = "Poca o cap data històrica disponible"
+            result["reason"] = "Little or no historical data available"
             return result
         
         current_price = hist_data['Close'].iloc[-1]
@@ -133,12 +133,12 @@ class UniverseFilter:
         try:
             vol_20d = hist_data['Volume'].tail(20).mean()
             if vol_20d >= 500_000 or (vol_20d * current_price) >= 20_000_000:
-                result["passed_criteria"].append("Volum i liquiditat aptes")
+                result["passed_criteria"].append("Volume and liquidity fit")
             else:
-                result["reason"] = "Volum insuficient"
+                result["reason"] = "Insufficient volume"
                 return result
         except Exception as e:
-            result["passed_criteria"].append(f"Volum (ignorat per error: {e})")
+            result["passed_criteria"].append(f"Volume (ignored due to error: {e})")
 
         # 2. HISTORIAL
         try:
@@ -147,30 +147,30 @@ class UniverseFilter:
                 result["reason"] = "Insufficient history (<6 months)"
                 return result
             
-            result["passed_criteria"].append("Historial suficient (>= 6 mesos)")
+            result["passed_criteria"].append("Sufficient history (>= 6 months)")
         except Exception as e:
-            result["passed_criteria"].append(f"Historial (ignorat per error: {e})")
+            result["passed_criteria"].append(f"History (ignored due to error: {e})")
 
         # 3. MARKET CAP
         try:
             mcap = info_data.get("market_cap", 0)
             if mcap >= 2_000_000_000:
-                result["passed_criteria"].append("Market cap apte")
+                result["passed_criteria"].append("Market cap fit")
             else:
-                result["reason"] = "Market cap insuficient (<2B$)"
+                result["reason"] = "Insufficient market cap (<2B$)"
                 return result
         except Exception as e:
-            result["passed_criteria"].append(f"Market cap (ignorat per error: {e})")
+            result["passed_criteria"].append(f"Market cap (ignored due to error: {e})")
 
         # 4. PREU MÍNIM
         try:
             if current_price > 5.0:
-                result["passed_criteria"].append("Preu > $5")
+                result["passed_criteria"].append("Price > $5")
             else:
                 result["reason"] = "Penny stock"
                 return result
         except Exception as e:
-            result["passed_criteria"].append(f"Preu mínim (ignorat per error: {e})")
+            result["passed_criteria"].append(f"Minimum price (ignored due to error: {e})")
 
         # 5. CRITERI ZOMBIE (clau de Trazo)
         zombie_check = self._check_zombie_criterion(hist_data)
@@ -183,12 +183,12 @@ class UniverseFilter:
         try:
             ath = hist_data['High'].max()
             if current_price >= ath * 0.10:
-                result["passed_criteria"].append("Preu vs ATH apte")
+                result["passed_criteria"].append("Price vs ATH fit")
             else:
-                result["reason"] = "Preu >90% per sota del màxim històric"
+                result["reason"] = "Price >90% below all-time high"
                 return result
         except Exception as e:
-            result["passed_criteria"].append(f"Preu vs ATH històric (ignorat per error: {e})")
+            result["passed_criteria"].append(f"Price vs ATH (ignored due to error: {e})")
 
         # Si supera tots els filtres, esdevé elegible
         result["eligible"] = True
