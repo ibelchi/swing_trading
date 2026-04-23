@@ -838,6 +838,6 @@ Todos los conceptos anteriores no valen de nada si el capital que inviertes es e
 
 ---
 
-### Agradecimientos y M閞itos
-Este software ha sido elaborado gracias a la inspiraci髇 en el trabajo de Dani S醤chez-Crespo (https://www.skool.com/decodecore) y David Bastidas (https://www.davidbastidas.com/) adem醩 de su colaboraci髇.
-Este software ha sido programado con una intenci髇 pedag骻ica y gracias a Gemini y Claude.
+### Agradecimientos y M茅ritos
+Este software ha sido elaborado gracias a la inspiraci贸n en el trabajo de Dani S谩nchez-Crespo (https://www.skool.com/decodecore) y David Bastidas (https://www.davidbastidas.com/) adem谩s de su colaboraci贸n.
+Este software ha sido programado con una intenci贸n pedag贸gica y gracias a Gemini y Claude.

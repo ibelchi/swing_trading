@@ -839,5 +839,5 @@ All previous concepts are worthless if capital you invest is what you need for n
 ---
 
 ### Acknowledgments and Credits
-This software has been developed thanks to the inspiration from the work of Dani Sánchez-Crespo (https://www.skool.com/decodecore) and David Bastidas (https://www.davidbastidas.com/) in addition to their collaboration.
+This software has been developed thanks to the inspiration from the work of Dani SÃ¡nchez-Crespo (https://www.skool.com/decodecore) and David Bastidas (https://www.davidbastidas.com/) in addition to their collaboration.
 This software has been programmed with a pedagogical intention and thanks to Gemini and Claude.

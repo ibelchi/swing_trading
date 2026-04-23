@@ -837,6 +837,6 @@ Tots els conceptes anteriors no valen de res si el capital que inverteixes Ã©s e
 | Swing Trading | EstratÃ¨gia d'inversiÃ³ en horitzÃ³ de dies a
 ---
 
-### Agraïments i Mèrits
-Aquest software ha estat elaborat gràcies a la inspiració en la feina de Dani Sánchez-Crespo (https://www.skool.com/decodecore) i David Bastidas (https://www.davidbastidas.com/) a més de la seva col·laboració.
-Aquest software ha estat programat amb una intenció pedagògica i gràcies a Gemini i Claude.
+### AgraÃ¯ments i MÃ¨rits
+Aquest software ha estat elaborat grÃ cies a la inspiraciÃ³ en la feina de Dani SÃ¡nchez-Crespo (https://www.skool.com/decodecore) i David Bastidas (https://www.davidbastidas.com/) a mÃ©s de la seva colÂ·laboraciÃ³.
+Aquest software ha estat programat amb una intenciÃ³ pedagÃ²gica i grÃ cies a Gemini i Claude.
