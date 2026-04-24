@@ -10,6 +10,7 @@ All notable changes to this project will be documented in this file.
 - **Database Backfill**: Added migration utility to automatically fill missing RSI and Volume metrics in historical SQLite records.
 - **Macro Sentiment**: Market sentiment dashboard (SPY, QQQ, VIX, TNX, DXY) moved to the top of the "History & Reports" tab for better context when reviewing opportunities.
 - **Diagnostic Logging**: Added real-time terminal logging for RSI and Volume calculations during scans.
+- **Financial Disclaimer**: Added a comprehensive legal disclaimer to the HTML report footer.
 
 ### Changed
 - **Default Configuration**: "Pre-filter universe" toggle now defaults to `ON` for faster, higher-quality scanning.

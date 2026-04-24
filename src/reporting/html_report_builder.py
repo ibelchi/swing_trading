@@ -216,7 +216,7 @@ def generate_html_report(opportunities: list, macro_data: dict = None, scan_conf
   .plan {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 14px; }}
   .plan-card {{ background: var(--bg-card); border: 1px solid var(--line); border-radius: 12px; padding: 16px 18px; }}
   .plan-card h3 {{ margin: 0 0 8px 0; font-size: 13px; text-transform: uppercase; color: var(--gold); }}
-  footer {{ margin-top: 60px; padding-top: 22px; border-top: 1px solid var(--line); color: var(--text-faint); font-size: 12px; text-align: center; }}
+  footer {{ margin-top: 60px; padding: 32px 0; border-top: 1px solid var(--line); color: var(--text-faint); font-size: 12px; text-align: center; }}
 </style>
 </head>
 <body>
@@ -261,7 +261,10 @@ def generate_html_report(opportunities: list, macro_data: dict = None, scan_conf
     </section>
 
     <footer>
-        RadarCore Assistant · Automatically generated · {date_str}
+        <p>RadarCore Assistant · Automatically generated · {date_str}</p>
+        <div style="margin-top: 15px; font-size: 11px; color: var(--text-faint); max-width: 800px; margin-left: auto; margin-right: auto; line-height: 1.4; border-top: 1px dashed var(--line-soft); padding-top: 15px;">
+            <b>Disclaimer:</b> This report is for informational and educational purposes only and does NOT constitute financial advice, investment recommendations, or an offer to buy or sell any securities. Trading involves significant risk. RadarCore and its authors decline all responsibility for any financial losses or damages resulting from the use of this information. Always perform your own due diligence.
+        </div>
     </footer>
 </div>
 </body>
