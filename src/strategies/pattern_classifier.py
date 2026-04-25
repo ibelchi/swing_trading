@@ -8,11 +8,12 @@ from src.strategies.bucket_scorers.score_highs import HighsScorer
 from src.strategies.bucket_scorers.score_descending import DescendingScorer
 
 class PatternClassifier:
-    def __init__(self, bucketer: BaseBucketer = None):
+    def __init__(self, bucketer: BaseBucketer = None, config: dict = None):
         if bucketer is None:
             self.bucketer = EraBucketer()
         else:
             self.bucketer = bucketer
+        self.config = config or {}
 
     def classify(self, hist_data: pd.DataFrame) -> dict:
         from src.utils.data_utils import normalize_yfinance_df
@@ -88,8 +89,8 @@ class PatternClassifier:
             Close = hist_data["Close"]
             pts = [(i, closes[i]) for i in range(len(closes))]
             
-            TARGET_MIN = 6
-            TARGET_MAX = 16
+            TARGET_MIN = int(self.config.get("rdp_pivot_min", 6))
+            TARGET_MAX = int(self.config.get("rdp_pivot_max", 16))
             max_iterations = 20
             
             # Initial conservative epsilon
@@ -344,14 +345,18 @@ class PatternClassifier:
             progress = (current - pivot_price) / (ath_3y - pivot_price) if (ath_3y - pivot_price) > 0 else 0
             progress_pct = min(max(progress * 100, 0), 100)
 
-            # 5. PHASE
-            if progress_pct < 20:
+            # 5. PHASE — thresholds from config
+            valley_max = self.config.get("phase_valley_max", 20.0)
+            mid_max    = self.config.get("phase_mid_max",    65.0)
+            mature_max = self.config.get("phase_mature_max", 85.0)
+
+            if progress_pct < valley_max:
                 phase = "VALLEY"
                 phase_label = "🟢 Start — maximum upside, maximum risk"
-            elif progress_pct < 65:
+            elif progress_pct < mid_max:
                 phase = "MID"
                 phase_label = "🟡 Sweet spot — confirmed trend"
-            elif progress_pct < 85:
+            elif progress_pct < mature_max:
                 phase = "MATURE"
                 phase_label = "🟠 Mature — little upside remaining"
             else:

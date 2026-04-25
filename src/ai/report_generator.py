@@ -43,94 +43,156 @@ class ReportGenerator:
 
         self.rag = RAGEngine()
         
-    def generate_report(self, symbol: str, strategy_name: str, tech_reason: str, current_price: float, metrics: dict = None, language: str = "English") -> str:
+    def generate_report(
+        self, 
+        symbol: str, 
+        strategy_name: str, 
+        tech_reason: str, 
+        current_price: float, 
+        metrics: dict = None, 
+        language: str = "English",
+        macro_context: dict = None,
+        news_items: list = None
+    ) -> str:
         """Groups RAG knowledge with technical findings to provide a summary in the selected language."""
         
         # Consult the RAG knowledge base for user criteria
-        # or general advice on swing trading and the specific strategy.
         user_knowledge = self.rag.similarity_search(f"Investment criteria and risk factors for {strategy_name} in stocks", k=3)
         
         # Ensure default empty dictionary for metrics
         metrics = metrics or {}
+
+        # Macro context
+        if macro_context:
+            macro_text = (
+                f"S&P 500: {macro_context.get('SPY',{}).get('change_pct',0):+.2f}% | "
+                f"Nasdaq: {macro_context.get('QQQ',{}).get('change_pct',0):+.2f}% | "
+                f"VIX: {macro_context.get('VIX',{}).get('value','N/A')} "
+                f"({'HIGH VOLATILITY' if macro_context.get('alerta_vix') else 'normal'}) | "
+                f"10Y Bond: {macro_context.get('TNX',{}).get('value','N/A')}%"
+            )
+        else:
+            macro_text = "Market context not available."
+
+        # News context
+        if news_items:
+            news_text = "\n".join([
+                f"- [{n['source']}] {n['headline']} — {n['summary']}"
+                for n in news_items[:5]
+            ])
+        else:
+            news_text = ("No real-time news available. "
+                         "Section based on model training knowledge only.")
         
         prompt = PromptTemplate.from_template("""
-You are an Expert Equity Analyst & Data Engineer specializing in swing trading.
+You are a swing trading analyst acting as a sanity
+check. The technical system has detected a potential
+opportunity. Your job: find reasons NOT to enter,
+or confirm the thesis is clean.
 
-Your task is to generate a structured fundamental analysis report to accompany the detected trading signal.
+Keep it under 400 words. Be specific. No generic advice.
 
-CURRENT MARKET DATA (FRESH):
-Ticker: {symbol}
-Current Price: {current_price}
-Recent High ({lookback_days} days): {period_high}
-Recent Low ({lookback_days} days): {period_low}
+═══════════════════════════════════
+TECHNICAL SIGNAL:
+═══════════════════════════════════
+Ticker: {symbol} | Price: ${current_price}
+Pattern: {bucket}{subtype_str}
+Phase: {phase} ({progress_pct}% of recovery)
+Upside to ATH 3Y: {upside_to_ath3y}%
 Drop: {drop_pct}% | Rebound: {rebound_pct}%
-Market Cap: {market_cap} B USD
-Average Volume: {volume} M
-PER (Trailing): {per}
-EPS (Forward): {eps}
-Dividend Yield: {dividend_yield}%
-Next Earnings: {next_earnings}
+RSI(14): {rsi_14} | Volume vs 3M: {vol_ratio_3m}x
+Price movement structure: {era_sequence}
 
-THEORETICAL KNOWLEDGE AND USER CRITERIA (RAG):
+═══════════════════════════════════
+MARKET CONTEXT TODAY:
+═══════════════════════════════════
+{macro_context_text}
+
+═══════════════════════════════════
+COMPANY FUNDAMENTALS (yfinance):
+═══════════════════════════════════
+Market Cap: {market_cap}B | P/E: {per} | EPS: {eps}
+Dividend: {dividend_yield}% | Next Earnings: {next_earnings}
+Volume: {volume}M avg
+
+═══════════════════════════════════
+RECENT NEWS ({news_source}):
+═══════════════════════════════════
+{news_text}
+
+═══════════════════════════════════
+YOUR INVESTMENT CRITERIA (RAG):
+═══════════════════════════════════
 {user_knowledge}
 
----
-STRUCTURE INSTRUCTIONS:
-Generate the report exactly with these points. It is CRUCIAL to label each data source:
+═══════════════════════════════════
+REPORT STRUCTURE:
+═══════════════════════════════════
 
-1. Executive Summary and Score (CONTEXTUAL/SYNTHETIC DATA):
-   - Fundamental Score: [0-100]
-   - Fundamental Risk Level: [Low / Medium / High / Critical]
-   - One-sentence thesis.
+## ⚡ Verdict
+[ENTER / WAIT / AVOID] — One sentence.
 
-2. Risk Calendar and Catalysts (FRESH DATA):
-   - Next Earnings: {next_earnings} (Alert if < 7 days).
-   - Ex-Dividend Date: {dividend_yield}% (Current dividend).
+## 🚨 Risk Flags
+List only real risks that invalidate the thesis.
+If none: "No critical flags detected."
+Auto-flags to always check:
+- If next_earnings < 14 days: mention gap risk
+- If RSI > 75: mention overbought chase risk
+- If phase is LATE and upside < 5%: flag low upside
+- If vol_ratio < 0.5: flag low conviction
 
-3. Financial Health and Valuation (MIXED DATA):
-   - EPS: {eps} and PER: {per} (FRESH DATA).
-   - General Health, Debt, and Margins (CONTEXTUAL DATA based on Gemini model: Evaluate according to your knowledge of the ticker).
+## 📰 News & Sentiment
+Tone: [Positive/Neutral/Negative/Unknown]
+Key themes: (1-2 lines, specific to {symbol})
+{news_disclaimer}
 
-4. "Smart Money" Flow (CONTEXTUAL DATA):
-   - Institutional Ownership, Insider Trading, and Analyst Sentiment.
-   - (This section is based exclusively on model training data, not real-time).
+## 💡 One thing to check manually
+The single most important thing to verify on Yahoo
+Finance or SEC before entering.
 
-5. Sectorial Context (CONTEXTUAL DATA):
-   - Relative Sector Strength and Macro correlations.
-
-6. Final Summary and Verdict:
-   - Pros and Cons.
-   - Fundamental Verdict: [APPROVED / CAUTION / DISCARDED].
-
----
-CRITICAL LOGIC:
-* If current data is bad despite the chart, be cautious.
-* If the RAG context says you don't want to invest in this company, the verdict must be DISCARDED.
-* Always respond in {language}.
+## ✅ Thesis Summary
+If verdict is ENTER or WAIT: confirm why the
+technical signal makes sense fundamentally in 2-3
+lines.
 
 ---
-TRANSPARENCY NOTICE AT THE END OF THE REPORT (in {language}):
-Always add a note indicating that sections marked as 'CONTEXTUAL' are based on the AI model's knowledge and may not reflect last-minute corporate changes.
+Rules:
+- Earnings < 7 days → verdict WAIT minimum
+- RAG contradicts entry → verdict AVOID
+- Respond in {language}
 """)
         
+        subtype_str = (f" → {metrics.get('subtype','')}" if metrics.get('subtype') else "")
+        news_disclaimer = ("" if news_items else "⚠️ Based on model training data, not real-time.")
+        news_source = ("Finnhub real-time" if news_items else "model knowledge")
+
         formatted_prompt = prompt.format(
             symbol=symbol,
-            strategy_name=strategy_name,
             current_price=metrics.get("current_price", current_price),
-            tech_reason=tech_reason,
-            user_knowledge=user_knowledge,
-            lookback_days=metrics.get("lookback_days", "?"),
-            period_high=metrics.get("period_high", "?"),
-            period_low=metrics.get("period_low", "?"),
-            drop_pct=round(metrics.get("drop_pct", 0), 2) if metrics.get("drop_pct") is not None else "?",
-            rebound_pct=round(metrics.get("rebound_pct", 0), 2) if metrics.get("rebound_pct") is not None else "?",
-            market_cap=round(metrics.get("market_cap", 0), 2) if metrics.get("market_cap") is not None else "?",
-            volume=round(metrics.get("volume", 0), 2) if metrics.get("volume") is not None else "?",
+            bucket=metrics.get("bucket", "N/A"),
+            subtype_str=subtype_str,
+            phase=metrics.get("phase", "N/A"),
+            progress_pct=round(metrics.get("progress_pct", 0) or 0, 0),
+            upside_to_ath3y=round(metrics.get("upside_to_ath3y", 0) or 0, 1),
+            drop_pct=round(metrics.get("drop_from_high_pct") or metrics.get("drop_pct", 0) or 0, 1),
+            rebound_pct=round(metrics.get("rebound_pct", 0) or 0, 1),
+            rsi_14=metrics.get("rsi_14", "N/A"),
+            vol_ratio_3m=metrics.get("vol_ratio_3m", "N/A"),
+            era_sequence=metrics.get("era_sequence", []),
+            macro_context_text=macro_text,
+            market_cap=round(metrics.get("market_cap", 0) or 0, 1),
             per=metrics.get("per", "N/A"),
             eps=metrics.get("eps", "N/A"),
             dividend_yield=metrics.get("dividend_yield", "N/A"),
             next_earnings=metrics.get("next_earnings", "N/A"),
-            language=language
+            volume=round(metrics.get("volume", 0) or 0, 1),
+            news_text=news_text,
+            news_source=news_source,
+            news_disclaimer=news_disclaimer,
+            user_knowledge=user_knowledge,
+            language=language,
+            strategy_name=strategy_name,
+            tech_reason=tech_reason
         )
         
         import time
@@ -154,4 +216,5 @@ Always add a note indicating that sections marked as 'CONTEXTUAL' are based on t
                 
                 logger.error(f"Error invoking LLM for reports: {e}")
                 return f"Error from AI generating the report ({e}). Check if your Google API Key is valid."
+        return "Critical: Failed to generate report after retries."
         return "Critical: Failed to generate report after retries."

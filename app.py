@@ -55,8 +55,50 @@ from src.logging.scan_report import generate_scan_report
 from src.utils.data_utils import normalize_yfinance_df
 from src.data.macro_fetcher import get_macro_context
 from src.utils.analysis_utils import is_not_recommended_today
-from src.reporting.html_report_builder import generate_html_report
 from src.utils.db_migration import backfill_rsi_and_vol
+from src.data.news_fetcher import get_company_news
+from src.reporting.html_report_builder import generate_html_report
+from src.analysis.correlation_matrix import calculate_correlation_matrix
+
+
+# ═══════════════════════════════════════════════
+# PRESETS — defined once, never mutated in place
+# ═══════════════════════════════════════════════
+PRESETS = {
+    "Default": {
+        "min_drop_pct": 10.0, "lookback_days": 60,
+        "min_rebound_pct": 2.0, "min_market_cap_b": 2.0,
+        "min_avg_vol_m": 0.5, "min_relative_drop": 5.0,
+        "phase_valley_max": 20.0, "phase_mid_max": 65.0, "phase_mature_max": 85.0,
+        "rdp_pivot_min": 6, "rdp_pivot_max": 16,
+        "zombie_recovery_pct": 50.0, "zombie_lookback_days": 504,
+        "conf_weight_drop": 0.50, "conf_weight_rebound": 0.35, "conf_weight_pattern": 0.15,
+    },
+    "Conservative": {
+        "min_drop_pct": 20.0, "lookback_days": 60,
+        "min_rebound_pct": 5.0, "min_market_cap_b": 5.0,
+        "min_avg_vol_m": 1.0, "min_relative_drop": 10.0,
+        "phase_valley_max": 20.0, "phase_mid_max": 65.0, "phase_mature_max": 85.0,
+        "rdp_pivot_min": 6, "rdp_pivot_max": 16,
+        "zombie_recovery_pct": 60.0, "zombie_lookback_days": 504,
+        "conf_weight_drop": 0.40, "conf_weight_rebound": 0.45, "conf_weight_pattern": 0.15,
+    },
+    "Aggressive": {
+        "min_drop_pct": 7.0, "lookback_days": 90,
+        "min_rebound_pct": 1.0, "min_market_cap_b": 1.0,
+        "min_avg_vol_m": 0.3, "min_relative_drop": 3.0,
+        "phase_valley_max": 25.0, "phase_mid_max": 70.0, "phase_mature_max": 88.0,
+        "rdp_pivot_min": 4, "rdp_pivot_max": 20,
+        "zombie_recovery_pct": 40.0, "zombie_lookback_days": 756,
+        "conf_weight_drop": 0.55, "conf_weight_rebound": 0.30, "conf_weight_pattern": 0.15,
+    },
+}
+
+# Load persisted custom preset if it exists
+_custom_path = ".streamlit/custom_preset.json"
+if os.path.exists(_custom_path):
+    with open(_custom_path) as _f:
+        PRESETS["Custom"] = json.load(_f)
 
 # --- DB BACKFILL ---
 if "backfill_done" not in st.session_state:
@@ -74,9 +116,11 @@ if "last_scan_html" not in st.session_state:
     try:
         recent_opps = db_init.query(Opportunity).order_by(Opportunity.date_detected.desc()).limit(30).all()
         if recent_opps:
+            reports = st.session_state.get("generated_reports", {})
             st.session_state["last_scan_html"] = generate_html_report(
                 opportunities=recent_opps,
-                macro_data=get_macro_context()
+                macro_data=get_macro_context(),
+                reports=reports
             )
     except Exception as e:
         print(f"Error initializing HTML report: {e}")
@@ -87,6 +131,12 @@ if "last_scan_html" not in st.session_state:
 if "scan_logger" not in st.session_state:
     st.session_state.scan_logger = ScanLogger()
 scan_logger = st.session_state.scan_logger
+
+# --- ACTIVE CONFIG (preset system) ---
+if "active_config" not in st.session_state:
+    st.session_state["active_config"] = PRESETS["Default"].copy()
+if "active_preset_name" not in st.session_state:
+    st.session_state["active_preset_name"] = "Default"
 
 # --- CONSTANTS ---
 VERSION = "1.2.0"
@@ -223,38 +273,73 @@ with st.sidebar:
     )
 
     st.divider()
-    if scan_logger.end_time or "last_scan_html" in st.session_state:
-        st.subheader("📋 Last Scan Reports")
-        
-        if scan_logger.end_time:
-            report_md = generate_scan_report(scan_logger)
-            st.download_button(
-                "📄 Markdown Report",
-                report_md,
-                file_name=f"radarcore_scan_{datetime.now().strftime('%Y%m%d_%H%M')}.md",
-                mime="text/markdown",
-                use_container_width=True
-            )
-        
-        if "last_scan_html" in st.session_state:
-            st.download_button(
-                label="🌐 Download HTML Report",
-                data=st.session_state["last_scan_html"],
-                file_name=f"radarcore_{datetime.now().strftime('%Y%m%d')}.html",
-                mime="text/html",
-                help="Visual HTML report — open in any browser",
-                use_container_width=True
-            )
+    st.subheader("📊 Reports & Downloads")
+    
+    # 1. Regenerate HTML Report
+    if st.button("🔄 Refresh HTML Report", use_container_width=True, help="Update the HTML report with the latest database entries"):
+        db_sidebar = SessionLocal()
+        try:
+            recent_opps = db_sidebar.query(Opportunity).order_by(Opportunity.date_detected.desc()).limit(50).all()
+            if recent_opps:
+                opps_ok = [o for o in recent_opps if not is_not_recommended_today(o.metrics)[0]]
+                opps_nok = [o for o in recent_opps if is_not_recommended_today(o.metrics)[0]]
+                
+                reports = st.session_state.get("generated_reports", {})
+                st.session_state["last_scan_html"] = generate_html_report(
+                    opportunities=opps_ok,
+                    macro_data=get_macro_context(),
+                    not_recommended=opps_nok,
+                    reports=reports
+                )
+                st.success("HTML Report updated!")
+                st.rerun()
+            else:
+                st.warning("No opportunities found in database.")
+        finally:
+            db_sidebar.close()
+
+    # 2. Download Buttons
+    if "last_scan_html" in st.session_state:
+        st.download_button(
+            label="🌐 Download HTML Report",
+            data=st.session_state["last_scan_html"],
+            file_name=f"radarcore_{datetime.now().strftime('%Y%m%d_%H%M')}.html",
+            mime="text/html",
+            help="Visual HTML report — open in any browser",
+            use_container_width=True
+        )
+    
+    if st.session_state.get('active_report_merged'):
+        st.download_button(
+            "📄 Download AI Analysis (MD)",
+            st.session_state['active_report_merged'],
+            file_name=f"radarcore_ai_analysis_{datetime.now().strftime('%Y%m%d_%H%M')}.md",
+            mime="text/markdown",
+            use_container_width=True,
+            help="Merged AI research reports for selected tickers"
+        )
+
+    if scan_logger.end_time:
+        report_md = generate_scan_report(scan_logger)
+        st.download_button(
+            "📝 Download Scan Log",
+            report_md,
+            file_name=f"radarcore_scan_log_{datetime.now().strftime('%Y%m%d_%H%M')}.md",
+            mime="text/markdown",
+            use_container_width=True,
+            help="Detailed diagnostic log of the last scan"
+        )
 
     st.divider()
     st.caption(f"RadarCore - Build Version: {VERSION}")
 
 # --- TABS ---
-tab_scanner, tab_watchlist, tab_history, tab_knowledge = st.tabs([
-    "Market Scanner", 
+tab_scanner, tab_watchlist, tab_history, tab_knowledge, tab_config = st.tabs([
+    "Market Scanner",
     "📋 Watchlist",
-    "History & Reports", 
-    "Investor Knowledge"
+    "History & Reports",
+    "Investor Knowledge",
+    "⚙️ Config",
 ])
 
 # Utility: Derive provider key
@@ -297,91 +382,51 @@ with tab_scanner:
         manual_research_btn = st.button("Research Ticker", type="primary", key="btn_research_manual")
         
     with col_strat:
-        st.subheader("Strategy Parameters")
-        # Direct import and strategy config logic moved here
-        from src.strategies.buy_the_dip import BuyTheDipStrategy
-        btd = BuyTheDipStrategy()
-        
-        db_conf = SessionLocal()
-        try:
-            conf_record = db_conf.query(StrategyConfig).filter(StrategyConfig.strategy_name == btd.name).first()
-            actual_params = conf_record.parameters if conf_record else btd.default_parameters
-            
-            # Sync session state with DB on first run if not already set (except if we just reset)
-            if "min_drop" not in st.session_state:
-                st.session_state["min_drop"] = actual_params.get("min_drop_pct", 5.0)
-            if "min_rebound" not in st.session_state:
-                st.session_state["min_rebound"] = actual_params.get("min_rebound_pct", 2.0)
-            if "min_mkt_cap" not in st.session_state:
-                st.session_state["min_mkt_cap"] = actual_params.get("min_market_cap_b", 2.0)
-            
-            st.write(f"**Current Strategy:** {btd.name}")
-            min_drop = st.slider("Minimum Drop (%)", 5.0, 50.0, float(st.session_state["min_drop"]), 0.5, key="min_drop_slider")
-            lookback = st.slider("Historical Window (Days)", 20, 250, int(actual_params.get("lookback_days", 60)), 5)
-            min_rebound = st.slider("Minimum Rebound (%)", 0.0, 15.0, float(st.session_state["min_rebound"]), 0.5, key="min_rebound_slider")
-            
-            col_n1, col_n2 = st.columns(2)
-            with col_n1:
-                mc = st.number_input("Min Mkt Cap (B $)", 0.0, 1000.0, float(st.session_state["min_mkt_cap"]), key="min_mkt_cap_input")
-            with col_n2:
-                vol = st.number_input("Min Avg Vol (M)", 0.0, 100.0, float(actual_params.get("min_volume_m", 1.0)))
-            
-            # Update session state immediately (reactive sync)
-            st.session_state["min_drop"] = min_drop
-            st.session_state["min_rebound"] = min_rebound
-            st.session_state["min_mkt_cap"] = mc
-            
-            st.caption("✨ Settings are applied live to the next scan.")
-        finally:
-            db_conf.close()
+        st.subheader("Active Configuration")
+        _cfg = st.session_state.get("active_config", PRESETS["Default"])
+        _preset = st.session_state.get("active_preset_name", "Default")
+        st.info(
+            f"⚙️ Active preset: **{_preset}** · "
+            f"Drop ≥{_cfg['min_drop_pct']:.0f}% · "
+            f"Rebound ≥{_cfg['min_rebound_pct']:.0f}% · "
+            f"Market Cap ≥{_cfg['min_market_cap_b']:.1f}B · "
+            f"Window {_cfg['lookback_days']}d"
+        )
+        st.caption("✨ Adjust all parameters in the ⚙️ Config tab.")
+        st.markdown(f"""
+| Parameter | Value |
+|---|---|
+| Phase thresholds | Valley<{_cfg['phase_valley_max']:.0f}% · Mid<{_cfg['phase_mid_max']:.0f}% · Mature<{_cfg['phase_mature_max']:.0f}% |
+| Confidence weights | Drop {_cfg['conf_weight_drop']:.0%} · Rebound {_cfg['conf_weight_rebound']:.0%} · Pattern {_cfg['conf_weight_pattern']:.0%} |
+| Zombie filter | {_cfg['zombie_lookback_days']}d lookback · min {_cfg['zombie_recovery_pct']:.0f}% recovery |
+""")
 
     if start_btn:
-        # Auto-save parameters to DB for persistence
-        db_save = SessionLocal()
-        try:
-            new_p = {
-                "min_drop_pct": min_drop,
-                "lookback_days": lookback,
-                "min_rebound_pct": min_rebound,
-                "min_market_cap_b": mc,
-                "min_volume_m": vol
-            }
-            conf_record = db_save.query(StrategyConfig).filter(StrategyConfig.strategy_name == btd.name).first()
-            if not conf_record:
-                db_save.add(StrategyConfig(strategy_name=btd.name, parameters=new_p))
-            else:
-                conf_record.parameters = new_p
-            db_save.commit()
-        except Exception as e:
-            logger.error(f"Error auto-saving parameters: {e}")
-        finally:
-            db_save.close()
+        _cfg = st.session_state.get("active_config", PRESETS["Default"])
 
         with st.spinner(f"Scanning {market_choice} market..."):
             scanner = MarketScanner()
-            # Move results_container OUTSIDE status block to ensure visibility
             results_container = st.container()
             with st.status("Scanning in progress...", expanded=True) as status:
                 st.write("Checking market symbols and downloading SPY context...")
-                
+
                 def live_chart_callback(symbol, hist, result):
                     with results_container:
                         if result.get("is_opportunity"):
                             st.success(f"New Opportunity Found: {symbol}")
                             st.toast(f"Opportunity for {symbol} added to History.", icon="🚀")
                         else:
-                            # Log heartbeats/rejections for transparency
                             reason = result.get("reason", "Filtered")
                             st.caption(f"Checked {symbol}: {reason}")
-                
+
                 try:
-                    # START SCAN LOGGING
                     scan_logger.start_scan({
                         "universe": market_choice,
-                        "min_drop_pct": min_drop,
-                        "auto_mode": auto_mode
+                        "min_drop_pct": _cfg["min_drop_pct"],
+                        "auto_mode": auto_mode,
+                        "preset": st.session_state.get("active_preset_name", "Default")
                     })
-                    
+
                     found_count = [0]
                     def live_chart_callback_with_counter(symbol, hist, result):
                         if result.get("is_opportunity"):
@@ -390,11 +435,14 @@ with tab_scanner:
 
                     overrides = {
                         "Buy the Recovery (Swing)": {
-                            "min_drop_pct": min_drop,
-                            "lookback_days": lookback,
-                            "min_rebound_pct": min_rebound,
-                            "min_market_cap_b": mc,
-                            "min_volume_m": vol
+                            "min_drop_pct":     _cfg["min_drop_pct"],
+                            "lookback_days":    _cfg["lookback_days"],
+                            "min_rebound_pct":  _cfg["min_rebound_pct"],
+                            "min_market_cap_b": _cfg["min_market_cap_b"],
+                            "min_volume_m":     _cfg["min_avg_vol_m"],
+                            "conf_weight_drop":    _cfg["conf_weight_drop"],
+                            "conf_weight_rebound": _cfg["conf_weight_rebound"],
+                            "conf_weight_pattern": _cfg["conf_weight_pattern"],
                         }
                     }
 
@@ -413,11 +461,19 @@ with tab_scanner:
                     # GENERATE HTML REPORT
                     db_report = SessionLocal()
                     try:
-                        last_opps = db_report.query(Opportunity).order_by(Opportunity.date_detected.desc()).limit(30).all()
+                        all_opps = db_report.query(Opportunity).order_by(Opportunity.date_detected.desc()).limit(100).all()
+                        
+                        # Separate actionable from non-recommended
+                        opps_ok = [o for o in all_opps if not is_not_recommended_today(o.metrics)[0]]
+                        opps_nok = [o for o in all_opps if is_not_recommended_today(o.metrics)[0]]
+                        
+                        reports = st.session_state.get("generated_reports", {})
                         st.session_state["last_scan_html"] = generate_html_report(
-                            opportunities=last_opps,
+                            opportunities=opps_ok,
                             macro_data=get_macro_context(),
-                            scan_config=overrides
+                            scan_config=overrides,
+                            not_recommended=opps_nok,
+                            reports=reports
                         )
                     finally:
                         db_report.close()
@@ -486,7 +542,13 @@ with tab_scanner:
                             model_name=ai_model, 
                             api_key=user_api_key if user_api_key else None
                         )
-                        report = gen.generate_report(manual_ticker, "Direct Search", "User Request", curr_p, metrics, language=report_lang)
+                        macro = get_macro_context()
+                        news = get_company_news(manual_ticker)
+
+                        report = gen.generate_report(
+                            manual_ticker, "Direct Search", "User Request", curr_p, metrics, 
+                            language=report_lang, macro_context=macro, news_items=news
+                        )
                         
                         # Save to reports/ folder
                         os.makedirs("reports", exist_ok=True)
@@ -762,6 +824,7 @@ with tab_history:
                 not_recommended, reason = is_not_recommended_today(m)
 
                 data.append({
+                    "Symbol_raw": op.symbol,
                     "Symbol": f"https://es.finance.yahoo.com/quote/{op.symbol}/",
                     "Company": op.company_name or op.symbol,
                     "Status": nou_estat,
@@ -805,6 +868,12 @@ with tab_history:
                     ascending=[True, False, False]
                 ).drop(columns=["_phase_order", "_conf_num", "_upside_num"]).reset_index(drop=True)
             
+            if not df_display.empty:
+                df_display["Finviz"] = df_display.apply(
+                    lambda row: f"https://finviz.com/quote.ashx?t={row['Symbol_raw']}",
+                    axis=1
+                )
+            
             # Millora 3: Separar DataFrames
             df_ok = df_display[df_display["_not_recommended"] == False].copy()
             df_nok = df_display[df_display["_not_recommended"] == True].copy()
@@ -818,9 +887,16 @@ with tab_history:
                 key="history_table_df",
                 column_config={
                     "id": None,
+                    "Symbol_raw": None,
                     "Symbol": st.column_config.LinkColumn(
                         "Symbol",
                         display_text=r"https://es\.finance\.yahoo\.com/quote/(.*?)/"
+                    ),
+                    "Finviz": st.column_config.LinkColumn(
+                        "Finviz",
+                        display_text="📊 View",
+                        width="small",
+                        help="Open in Finviz"
                     ),
                     "RSI": st.column_config.TextColumn("RSI(14)", width="small"),
                     "Vol": st.column_config.TextColumn(
@@ -854,9 +930,16 @@ with tab_history:
                         df_nok_display.drop(columns=["_not_recommended", "_not_rec_reason"]),
                         column_config={
                             "id": None,
+                            "Symbol_raw": None,
                             "Symbol": st.column_config.LinkColumn(
                                 "Symbol",
                                 display_text=r"https://es\.finance\.yahoo\.com/quote/(.*?)/"
+                            ),
+                            "Finviz": st.column_config.LinkColumn(
+                                "Finviz",
+                                display_text="📊 View",
+                                width="small",
+                                help="Open in Finviz"
                             ),
                             "RSI": st.column_config.TextColumn("RSI(14)", width="small"),
                             "Vol": st.column_config.TextColumn(
@@ -869,6 +952,63 @@ with tab_history:
                         use_container_width=True,
                         hide_index=True
                     )
+
+            # --- PORTFOLIO CORRELATION ANALYSIS ---
+            with st.expander("📊 Portfolio Correlation Analysis", expanded=False):
+                # Agafa els tickers de les oportunitats mostrades (accionables)
+                symbols = df_ok["Symbol_raw"].tolist() if not df_ok.empty else []
+
+                if len(symbols) >= 2:
+                    with st.spinner("Calculating correlations..."):
+                        corr_data = calculate_correlation_matrix(symbols, period_days=60)
+
+                    if not corr_data["matrix"].empty:
+                        # Alerta general
+                        level = corr_data["warning_level"]
+                        avg = corr_data["avg_portfolio_correlation"]
+                        if level == "HIGH":
+                            st.warning(f"⚠️ High portfolio correlation ({avg:.2f} avg). Many positions move together — consider diversifying sectors.")
+                        elif level == "MEDIUM":
+                            st.info(f"📊 Moderate correlation ({avg:.2f} avg). Monitor sector concentration.")
+                        else:
+                            st.success(f"✅ Good diversification ({avg:.2f} avg).")
+
+                        # Parells problemàtics
+                        if corr_data["high_corr_pairs"]:
+                            st.markdown("**Highly correlated pairs:**")
+                            for pair in corr_data["high_corr_pairs"][:5]:
+                                st.markdown(f"{pair['warning']} **{pair['ticker_a']}** ↔ **{pair['ticker_b']}**: {pair['correlation']:.2f}")
+
+                        # Matriu visual (heatmap)
+                        import plotly.graph_objects as go
+                        matrix = corr_data["matrix"]
+                        fig = go.Figure(data=go.Heatmap(
+                            z=matrix.values,
+                            x=matrix.columns.tolist(),
+                            y=matrix.columns.tolist(),
+                            colorscale=[
+                                [0.0, "#1a1a2e"],
+                                [0.5, "#16213e"],
+                                [0.75, "#f59e0b"],
+                                [1.0, "#ef4444"]
+                            ],
+                            zmin=-1, zmax=1,
+                            text=matrix.values.round(2),
+                            texttemplate="%{text}",
+                            showscale=True
+                        ))
+                        fig.update_layout(
+                            paper_bgcolor="#0b0d10",
+                            plot_bgcolor="#0b0d10",
+                            font_color="white",
+                            height=400,
+                            margin=dict(l=20, r=20, t=20, b=20)
+                        )
+                        st.plotly_chart(fig, use_container_width=True)
+                    else:
+                        st.error("Could not calculate correlation matrix. Check connection or tickers.")
+                else:
+                    st.info("Need at least 2 opportunities to calculate correlation.")
 
             # Llegim la selecció directament del session_state del widget (només de la taula OK)
             raw_selection = st.session_state.get("history_table_df", {})
@@ -978,10 +1118,13 @@ with tab_history:
                                 op = db.query(Opportunity).filter(Opportunity.id == selected_op_id).first()
                                 
                                 if op:
-                                    st.toast(f"AI Analyzing {op.symbol}...", icon="🧠")
+                                    macro = get_macro_context()
+                                    news = get_company_news(op.symbol)
+
                                     content = report_gen.generate_report(
                                         op.symbol, op.strategy_name, op.explanation, 
-                                        op.current_price, op.metrics, language=report_lang
+                                        op.current_price, op.metrics, language=report_lang,
+                                        macro_context=macro, news_items=news
                                     )
                                     
                                     h_data = get_historical_data(op.symbol, period="2y")
@@ -1090,6 +1233,27 @@ with tab_history:
                     if st.session_state['active_analysis_type'] == 'reports':
                         st.markdown(item["content"])
                     
+                    # Link Buttons
+                    symbol = item["symbol"]
+                    col1, col2, col3 = st.columns(3)
+                    col1.link_button(
+                        "📰 Yahoo Finance News",
+                        f"https://finance.yahoo.com/quote/{symbol}/news/",
+                        use_container_width=True
+                    )
+                    col2.link_button(
+                        "📊 Finviz",
+                        f"https://finviz.com/quote.ashx?t={symbol}",
+                        use_container_width=True
+                    )
+                    col3.link_button(
+                        "🏛️ SEC Filings",
+                        f"https://www.sec.gov/cgi-bin/browse-edgar"
+                        f"?action=getcompany&company={symbol}"
+                        f"&type=8-K&dateb=&owner=include&count=10",
+                        use_container_width=True
+                    )
+                    
                     if not item["hist"].empty:
                         render_tv_chart(item['symbol'], item["hist"], item["metrics"], height=500)
                             
@@ -1163,3 +1327,218 @@ with tab_knowledge:
                         st.error(f"Failed to index '{pdf_file.name}'.")
         else:
             st.warning("Please select at least one document.")
+
+# --- TAB CONFIG ---
+with tab_config:
+    st.header("⚙️ Scanner Configuration")
+    st.write("All parameters configured here are applied on the next scan run.")
+
+    # ── ZONE A: Preset Selector ──
+    st.subheader("Configuration Presets")
+
+    col_presets = st.columns(4)
+    _preset_names_base = ["Default", "Conservative", "Aggressive"]
+
+    for i, name in enumerate(_preset_names_base):
+        with col_presets[i]:
+            is_active = (st.session_state["active_preset_name"] == name)
+            if st.button(
+                f"{'✅ ' if is_active else ''}{name}",
+                use_container_width=True,
+                type="primary" if is_active else "secondary",
+                key=f"preset_btn_{name}"
+            ):
+                st.session_state["active_config"] = PRESETS[name].copy()
+                st.session_state["active_preset_name"] = name
+                st.rerun()
+
+    with col_presets[3]:
+        if "Custom" in PRESETS:
+            is_custom_active = (st.session_state["active_preset_name"] == "Custom")
+            if st.button(
+                f"{'✅ ' if is_custom_active else ''}Custom",
+                use_container_width=True,
+                type="primary" if is_custom_active else "secondary",
+                key="preset_btn_Custom"
+            ):
+                st.session_state["active_config"] = PRESETS["Custom"].copy()
+                st.session_state["active_preset_name"] = "Custom"
+                st.rerun()
+        if st.button("💾 Save as Custom", use_container_width=True, key="btn_save_custom"):
+            PRESETS["Custom"] = st.session_state["active_config"].copy()
+            st.session_state["active_preset_name"] = "Custom"
+            os.makedirs(".streamlit", exist_ok=True)
+            with open(".streamlit/custom_preset.json", "w") as _fout:
+                json.dump(PRESETS["Custom"], _fout, indent=2)
+            st.success("✅ Custom preset saved!")
+
+    st.divider()
+
+    # ── ZONE B: Detection Parameters ──
+    st.subheader("📉 Detection Parameters")
+    st.caption(
+        "These control which stocks are considered opportunities. "
+        "More restrictive = fewer but higher quality signals."
+    )
+
+    cfg = st.session_state["active_config"]
+
+    col1, col2 = st.columns(2)
+    with col1:
+        cfg["min_drop_pct"] = st.slider(
+            "Minimum Drop (%)", min_value=5.0, max_value=50.0,
+            value=float(cfg["min_drop_pct"]), step=0.5,
+            help="Minimum fall from period high to period low. "
+                 "Higher = fewer but more significant drops. Default: 10%"
+        )
+        cfg["min_rebound_pct"] = st.slider(
+            "Minimum Rebound (%)", min_value=0.0, max_value=15.0,
+            value=float(cfg["min_rebound_pct"]), step=0.5,
+            help="Minimum bounce from the low to confirm the turn. "
+                 "Higher = more confirmation but later entry. Default: 2%"
+        )
+        cfg["lookback_days"] = st.slider(
+            "Historical Window (days)", min_value=20, max_value=250,
+            value=int(cfg["lookback_days"]), step=5,
+            help="How far back to look for the high. 60 days = 3 months. Default: 60"
+        )
+    with col2:
+        cfg["min_market_cap_b"] = st.slider(
+            "Min Market Cap (B$)", min_value=0.0, max_value=50.0,
+            value=float(cfg["min_market_cap_b"]), step=0.5,
+            help="Minimum company size. Higher = more stable companies, "
+                 "fewer opportunities. Default: 2B$"
+        )
+        cfg["min_avg_vol_m"] = st.slider(
+            "Min Avg Volume (M shares)", min_value=0.0, max_value=10.0,
+            value=float(cfg["min_avg_vol_m"]), step=0.1,
+            help="Minimum daily trading volume. Ensures you can buy and sell easily. Default: 0.5M"
+        )
+        cfg["min_relative_drop"] = st.slider(
+            "Min Relative Drop vs SPY (%)", min_value=0.0, max_value=20.0,
+            value=float(cfg["min_relative_drop"]), step=0.5,
+            help="Minimum extra drop vs S&P 500 to consider idiosyncratic. "
+                 "Higher = only company-specific drops. Default: 5%"
+        )
+
+    st.divider()
+
+    # ── ZONE C: Phase Classification ──
+    st.subheader("🎯 Phase Classification")
+    st.caption(
+        "These thresholds define when a stock transitions from one recovery phase to another."
+    )
+
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        cfg["phase_valley_max"] = st.slider(
+            "VALLEY upper limit (%)", min_value=10.0, max_value=35.0,
+            value=float(cfg["phase_valley_max"]), step=1.0,
+            help="Progress% below this = VALLEY phase. Early entry, max upside, max risk. Default: 20%"
+        )
+    with col2:
+        cfg["phase_mid_max"] = st.slider(
+            "MID upper limit (%)", min_value=40.0, max_value=80.0,
+            value=float(cfg["phase_mid_max"]), step=1.0,
+            help="Progress% below this (above VALLEY) = MID phase. Sweet spot. Default: 65%"
+        )
+    with col3:
+        cfg["phase_mature_max"] = st.slider(
+            "MATURE upper limit (%)", min_value=70.0, max_value=95.0,
+            value=float(cfg["phase_mature_max"]), step=1.0,
+            help="Progress% below this (above MID) = MATURE. Above this = LATE. Default: 85%"
+        )
+
+    # Phase preview
+    st.markdown("**Phase boundaries preview:**")
+    _v = cfg["phase_valley_max"]
+    _m = cfg["phase_mid_max"]
+    _ma = cfg["phase_mature_max"]
+    st.markdown(
+        f"🟢 VALLEY: 0–{_v:.0f}% · "
+        f"🟡 MID: {_v:.0f}–{_m:.0f}% · "
+        f"🟠 MATURE: {_m:.0f}–{_ma:.0f}% · "
+        f"🔴 LATE: {_ma:.0f}–100%"
+    )
+
+    st.divider()
+
+    # ── ZONE D: Confidence Weights ──
+    st.subheader("📊 Confidence Score Weights")
+    st.caption(
+        "The confidence score is a weighted sum of three components. "
+        "Weights should sum to 1.0."
+    )
+
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        cfg["conf_weight_drop"] = st.slider(
+            "Drop quality weight", min_value=0.10, max_value=0.80,
+            value=float(cfg["conf_weight_drop"]), step=0.05,
+            help="How much the size of the drop contributes to confidence. Default: 50%"
+        )
+    with col2:
+        cfg["conf_weight_rebound"] = st.slider(
+            "Rebound quality weight", min_value=0.10, max_value=0.80,
+            value=float(cfg["conf_weight_rebound"]), step=0.05,
+            help="How much the rebound strength contributes to confidence. Default: 35%"
+        )
+    with col3:
+        cfg["conf_weight_pattern"] = st.slider(
+            "Pattern weight", min_value=0.05, max_value=0.40,
+            value=float(cfg["conf_weight_pattern"]), step=0.05,
+            help="How much the detected pattern contributes to confidence. Default: 15%"
+        )
+
+    total_weight = (
+        cfg["conf_weight_drop"] +
+        cfg["conf_weight_rebound"] +
+        cfg["conf_weight_pattern"]
+    )
+    if abs(total_weight - 1.0) > 0.01:
+        st.warning(
+            f"⚠️ Weights sum to **{total_weight:.2f}**, not 1.0. "
+            f"Results may be unexpected. Adjust until sum = 1.0."
+        )
+    else:
+        st.success(f"✅ Weights sum correctly to **{total_weight:.2f}**")
+
+    st.divider()
+
+    # ── ZONE E: Advanced Parameters ──
+    with st.expander("🔬 Advanced Parameters", expanded=False):
+        st.caption(
+            "Advanced parameters. Only modify if you understand their impact. "
+            "Default values are recommended for most use cases."
+        )
+        col1, col2 = st.columns(2)
+        with col1:
+            cfg["rdp_pivot_min"] = st.slider(
+                "RDP Min Pivots", min_value=3, max_value=10,
+                value=int(cfg["rdp_pivot_min"]), step=1,
+                help="Minimum number of pivot points in the chart. Fewer = simpler chart. Default: 6"
+            )
+            cfg["rdp_pivot_max"] = st.slider(
+                "RDP Max Pivots", min_value=10, max_value=30,
+                value=int(cfg["rdp_pivot_max"]), step=1,
+                help="Maximum pivot points before simplifying further. Default: 16"
+            )
+        with col2:
+            cfg["zombie_recovery_pct"] = st.slider(
+                "Zombie filter: min recovery (%)", min_value=20.0, max_value=80.0,
+                value=float(cfg["zombie_recovery_pct"]), step=5.0,
+                help="Minimum historical recovery needed to not be classified as zombie. Default: 50%"
+            )
+            cfg["zombie_lookback_days"] = st.slider(
+                "Zombie filter: lookback (days)", min_value=252, max_value=1260,
+                value=int(cfg["zombie_lookback_days"]), step=63,
+                help="How far back to look for zombie check. 504 = 2 years. Default: 504"
+            )
+
+        if st.button("🔄 Reset ALL to Default", type="secondary", key="btn_reset_config"):
+            st.session_state["active_config"] = PRESETS["Default"].copy()
+            st.session_state["active_preset_name"] = "Default"
+            st.rerun()
+
+    # Persist changes back to session state
+    st.session_state["active_config"] = cfg

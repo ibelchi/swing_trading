@@ -2,6 +2,7 @@ import logging
 import time
 import pandas as pd
 import yfinance as yf
+from datetime import datetime
 from typing import Optional
 
 from src.data.ingestion import get_market_symbols, get_historical_data, get_company_info, get_detailed_info, RateLimitException
@@ -217,6 +218,8 @@ class MarketScanner:
                             from src.data.earnings_fetcher import get_earnings_dates
                             earns = get_earnings_dates(sym)
                             
+                            print(f"[EARNINGS {sym}] next={earns.get('next')} past={earns.get('past')}")
+                            
                             metrics = result.get("metrics", {})
                             metrics.update({
                                 "next_earnings": earns.get("next"),
@@ -225,23 +228,32 @@ class MarketScanner:
                                 "past_earnings": earns.get("past", [])
                             })
 
-                            # 3. SAVED TO DATABASE
-                            op = Opportunity(
-                                symbol=sym,
-                                company_name=detailed.get("short_name") or info_data.get("short_name") or sym,
-                                strategy_name=strategy.name,
-                                current_price=result.get("current_price"),
-                                strategy_config=config,
-                                explanation=result.get("reason"),
-                                metrics=metrics,
-                                confidence=result.get("confidence", 0.0),
-                                market=market,
-                                currency=info_data.get("currency", "USD")
-                            )
-                            # Update metrics with detailed info
-                            op.metrics.update(detailed)
-                            db.add(op)
-                            db.commit()
+                            # 3. SAVED TO DATABASE (BUG 4 — deduplication)
+                            today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+                            existing = db.query(Opportunity).filter(
+                                Opportunity.symbol == sym,
+                                Opportunity.date_detected >= today_start
+                            ).first()
+
+                            if not existing:
+                                op = Opportunity(
+                                    symbol=sym,
+                                    company_name=detailed.get("short_name") or info_data.get("short_name") or sym,
+                                    strategy_name=strategy.name,
+                                    current_price=result.get("current_price"),
+                                    strategy_config=config,
+                                    explanation=result.get("reason"),
+                                    metrics=metrics,
+                                    confidence=result.get("confidence", 0.0),
+                                    market=market,
+                                    currency=info_data.get("currency", "USD")
+                                )
+                                # Update metrics with detailed info
+                                op.metrics.update(detailed)
+                                db.add(op)
+                                db.commit()
+                            else:
+                                logger.info(f"[{sym}] Opportunity already exists for today. Skipping DB insertion.")
                         else:
                             # DISCARD CASE: Only logged to scan_logger
                             if scan_logger:

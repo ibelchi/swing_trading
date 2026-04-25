@@ -111,11 +111,14 @@ class BuyTheDipStrategy(StrategyBase):
             "pattern_type": pattern_type
         }
 
-        # 5. Enhanced Confidence
-        conf_drop = min(drop_from_high_pct / 40.0, 1.0) * 0.50
-        conf_rebound = min(rebound_pct / 10.0, 1.0) * 0.35
-        conf_pattern = 0.15
-        
+        # 5. Enhanced Confidence (weights from active config)
+        w_drop    = p.get("conf_weight_drop",    0.50)
+        w_rebound = p.get("conf_weight_rebound", 0.35)
+        w_pattern = p.get("conf_weight_pattern", 0.15)
+        conf_drop = min(drop_from_high_pct / 40.0, 1.0) * w_drop
+        conf_rebound = min(rebound_pct / 10.0, 1.0) * w_rebound
+        conf_pattern = w_pattern
+
         result["confidence"] = round((conf_drop + conf_rebound + conf_pattern) * 100, 2)
         result["is_opportunity"] = True
 

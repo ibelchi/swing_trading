@@ -539,6 +539,121 @@ Con un buen R/R, puedes ser rentable incluso acertando menos del 50% de las oper
 
 ---
 
+## Capítulo 16b: Cómo leer Finviz — tu panel de control rápido
+
+Cuando RadarCore detecta una oportunidad y haces clic en el botón **📊 Finviz** de la tabla de resultados, se abre una página que concentra mucha información en un solo lugar. Aquí te explico dónde mirar y en qué orden, para no perderse.
+
+### ¿Qué es Finviz?
+
+Finviz (Financial Visualizations) es una herramienta gratuita de visualización financiera usada por traders profesionales y particulares. Su página para cada ticker combina en un solo panel los datos fundamentales de la empresa, los indicadores técnicos y las noticias recientes. Para swing trading es probablemente la herramienta de "primer vistazo" más eficiente que existe.
+
+### El circuito de lectura: 4 miradas en 2 minutos
+
+#### Primera mirada — El gráfico (derecha de la página)
+
+Mira el gráfico antes que cualquier número. Tu cerebro es muy bueno detectando patrones visuales, y el gráfico te confirma o desmiente lo que RadarCore ha detectado.
+
+Busca:
+- **La forma del patrón:** ¿Ves la caída y el rebote que RadarCore ha detectado? Si el gráfico muestra una línea que simplemente baja sin ninguna señal de giro, desconfía.
+- **Dónde está el precio hoy:** ¿Cerca del máximo o del mínimo reciente?
+- **Las barras de volumen** (debajo del gráfico): Las barras más altas indican días con mucha actividad. Si el día del giro tenía una barra muy alta, es una señal de convicción.
+
+#### Segunda mirada — Los números clave (tabla superior izquierda)
+
+Aquí encontrarás una tabla con muchos campos. Para swing trading, ignora la mayoría y céntrate en estos:
+
+| Campo de Finviz | Nombre completo | Para swing trading |
+|-----------------|-----------------|-------------------|
+| **P/E** | Price-to-Earnings | Mide si la empresa es "cara". < 30 es razonable. "N/A" puede indicar pérdidas |
+| **EPS next Y** | Beneficio por acción previsto | Debe ser positivo. Indica si la empresa crecerá |
+| **Short Float** | % de inversores apostando a la baja | > 20% es peligro. Mucha gente cree que bajará |
+| **RSI (14)** | Indicador de fuerza relativa | 30-70 es la zona saludable para entrar |
+| **Perf Week** | Rendimiento de la semana | Confirma o contradice el rebote de RadarCore |
+| **Volume / Avg Volume** | Volumen hoy vs habitual | > 1.5x indica interés institucional |
+| **52W High / Low** | Rango del año | Te sitúa el precio en contexto anual |
+
+**Cómo leer el campo "Short Float":**
+Si el Short Float es del 25%, significa que el 25% de las acciones disponibles están "prestadas" por inversores que apuestan a que el precio bajará. Un Short Float alto es un riesgo: si la acción sube a pesar de las apuestas en contra, puede producirse un "short squeeze" (subida muy rápida), pero también puede indicar que profesionales del mercado ven problemas que tú no ves.
+
+#### Tercera mirada — La sección de noticias (parte inferior)
+
+Finviz muestra los titulares de los últimos días ordenados por fecha. **Lee los titulares de las últimas 48-72 horas.** Busca:
+
+- **Resultados financieros recientes:** Si la empresa ha publicado resultados en los últimos días, el movimiento de precio puede estar relacionado.
+- **Cambios de directivo:** Un nuevo CEO o CFO puede cambiar el rumbo de la empresa.
+- **Fusiones o adquisiciones:** Cambian completamente la tesis de inversión.
+- **Noticias sectoriales:** Una regulación nueva que afecte a todo el sector.
+
+Si ves noticias positivas recientes que coinciden con el rebote detectado por RadarCore, es una confirmación de calidad. Si las noticias son negativas pero el precio rebota, entiende por qué.
+
+#### Cuarta mirada — Los analistas (si quieres profundizar)
+
+- **Target Price:** El precio objetivo de los analistas de Wall Street
+- **Analyst Recom.:** La recomendación agregada (Buy / Hold / Sell)
+
+Estos campos no son definitivos, pero si la recomendación es "Strong Sell" y RadarCore detecta una oportunidad, vale la pena saberlo.
+
+### Ejemplo práctico de lectura de Finviz
+
+RadarCore detecta MSFT como SWING en fase MID. Abres Finviz y ves:
+- **Gráfico:** Clara caída desde 450$ hasta 380$ y rebote a 410$. La forma coincide con el patrón detectado ✅
+- **P/E 31:** Ligeramente alto pero razonable para Microsoft ✅
+- **RSI 52:** En zona neutral, ni sobrecomprado ni sobrevendido ✅
+- **Short Float 0.6%:** Casi nadie apuesta a la bajada ✅
+- **Perf Week +3.2%:** El rebote que RadarCore ha detectado es real y reciente ✅
+- **Noticia reciente:** "Microsoft raises Azure guidance for Q4" ✅
+
+**Conclusión:** Todo confirma la tesis de RadarCore. Es un buen candidato para profundizar.
+
+---
+
+## Capítulo 16c: El botón SEC Filings — la fuente primaria de toda la información
+
+Cuando haces clic en el botón **🏛️ SEC Filings** de RadarCore, se abre la base de datos oficial de la SEC para esa empresa.
+
+### ¿Qué es la SEC y por qué importa?
+
+La **SEC** (Securities and Exchange Commission) es el equivalente americano de la CNMV española: el organismo gubernamental que regula los mercados financieros de los Estados Unidos. Todas las empresas que cotizan en bolsas americanas están **obligadas por ley** a publicar información sobre cualquier hecho que pueda afectar el precio de sus acciones.
+
+Esta información se publica en el sistema **EDGAR** (Electronic Data Gathering, Analysis, and Retrieval) de la SEC, que es público y gratuito.
+
+La importancia para ti: **la SEC es la fuente primaria de toda la información oficial**. Yahoo Finance, Bloomberg, CNBC — todos obtienen la información de la SEC.
+
+### El documento más importante: el formulario 8-K
+
+El **8-K** es la obligación que tiene la empresa de notificar cualquier "hecho material" en un plazo de 4 días hábiles.
+
+**Ejemplos de 8-K que puedes encontrar:**
+
+| Tipo de 8-K | Significado | Impacto en el precio |
+|-------------|-------------|---------------------|
+| Resultados financieros (Earnings) | La empresa publica los números del trimestre | Puede subir o bajar mucho |
+| Cambio de CEO o CFO | Un directivo clave entra o sale | Incierto, depende del motivo |
+| Adquisición de otra empresa | Compran o son comprados | Suele subir si compran |
+| Emisión de nuevas acciones | Venden acciones nuevas para captar capital | Suele bajar (dilución) |
+| Demanda judicial importante | La empresa es demandada o demanda | Depende de la gravedad |
+
+### Cuándo debes abrir SEC Filings
+
+**Siempre que:**
+- RadarCore detecta una caída grande (>25%) y no entiendes por qué ha caído
+- Quieres saber si ha pasado algo importante en los últimos 30 días
+- Finviz muestra una noticia reciente que no entiendes del todo
+
+**El flujo recomendado:**
+1. RadarCore detecta la oportunidad
+2. Abres Finviz → miras el gráfico y los números
+3. Si las noticias mencionan algo importante, abres SEC Filings para leer el 8-K oficial
+4. Con toda esta información, decides si la tesis es sólida o si hay factores de riesgo que RadarCore no puede detectar
+
+### Otros documentos útiles de la SEC
+
+- **10-K:** El informe anual completo. La sección "Risk Factors" es valiosa.
+- **10-Q:** El informe trimestral. Más frecuente que el 10-K.
+- **Form 4:** Compras y ventas de acciones por parte de los directivos. Si el CEO compra muchas acciones propias, es una señal positiva.
+
+---
+
 ## Capítulo 17: Los Earnings — el riesgo más importante del swing trading
 
 ### ¿Qué son los Earnings?

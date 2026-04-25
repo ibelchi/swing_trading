@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.3.0] - 2026-04-25
+### Added
+- **Configuration System**: New "⚙️ Configuration" tab allowing live tuning of scanner parameters and weights.
+- **Preset Management**: Support for Default, Conservative, and Aggressive presets with local persistence (`custom_preset.json`).
+- **Educational Content**: Added Finviz (16b) and SEC Filings (16c) chapters to the Beginner's Guide in all languages.
+- **Project Roadmap**: New `docs/ROADMAP.md` outlining future implementations (Backtesting, Correlation, etc.).
+
+### Changed
+- **Technical Reference**: Unified technical criteria discussion into a single comprehensive `TECHNICAL_REFERENCE.md`.
+- **Scanner UI**: Updated the main interface to display a read-only summary of the active strategy configuration.
+
+---
+
 ## [1.2.0] - 2026-04-24
 ### Added
 - **HTML Reporting**: New premium HTML report builder based on the Trazo design system.

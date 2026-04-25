@@ -539,6 +539,121 @@ Amb un bon R/R, pots ser rentable fins i tot encertant menys del 50% de les oper
 
 ---
 
+## Capítol 16b: Com llegir Finviz — el teu panell de control ràpid
+
+Quan RadarCore detecta una oportunitat i fas clic al botó **📊 Finviz** de la taula de resultats, s'obre una pàgina que concentra molta informació en un sol lloc. Aquí t'explico on mirar i en quin ordre, per no perdre's.
+
+### Què és Finviz?
+
+Finviz (Financial Visualizations) és una eina gratuïta de visualització financera usada per traders professionals i particulars. La seva pàgina per a cada ticker combina en un sol panell les dades fonamentals de l'empresa, els indicadors tècnics i les notícies recents. Per a swing trading és probablement l'eina de "primer cop d'ull" més eficient que existeix.
+
+### El circuit de lectura: 4 mirades en 2 minuts
+
+#### Primera mirada — El gràfic (dreta de la pàgina)
+
+Mira el gràfic abans de qualsevol número. El teu cervell és molt bo detectant patrons visuals, i el gràfic et confirma o desmenteix el que RadarCore ha detectat.
+
+Busca:
+- **La forma del patró:** ¿Veus la caiguda i el rebot que RadarCore ha detectat? Si el gràfic mostra una línia que simplement baixa sense cap senyal de gir, desconfia.
+- **On és el preu avui:** Prop del màxim o del mínim recent?
+- **Les barres de volum** (a sota del gràfic): Les barres més altes indiquen dies amb molta activitat. Si el dia del gir tenia una barra molt alta, és una senyal de convicció.
+
+#### Segona mirada — Els números clau (taula superior esquerra)
+
+Aquí trobaràs una taula amb molts camps. Per a swing trading, ignora la majoria i centra't en aquests:
+
+| Camp de Finviz | Nom complet | Per a swing trading |
+|---------------|-------------|---------------------|
+| **P/E** | Price-to-Earnings | Mesura si l'empresa és "cara". < 30 és raonable. "N/A" pot indicar pèrdues |
+| **EPS next Y** | Benefici per acció previst | Ha de ser positiu. Indica si l'empresa crescerà |
+| **Short Float** | % d'inversors apostant a la baixa | > 20% és perill. Molta gent creu que baixarà |
+| **RSI (14)** | Indicador de força relativa | 30-70 és la zona saludable per entrar |
+| **Perf Week** | Rendiment de la setmana | Confirma o contradiu el rebot de RadarCore |
+| **Volume / Avg Volume** | Volum avui vs habitual | > 1.5x indica interès institucional |
+| **52W High / Low** | Rang de l'any | Et situa el preu en context anual |
+
+**Com llegir el camp "Short Float":**
+Si el Short Float és del 25%, vol dir que el 25% de les accions disponibles estan "prestades" per inversors que aposten a que el preu baixarà. Un Short Float alt és un risc: si l'acció puja malgrat les apostes en contra, es pot produir un "short squeeze" (pujada molt ràpida), però també pot indicar que professionals del mercat veuen problemes que tu no veus.
+
+#### Tercera mirada — La secció de notícies (part inferior)
+
+Finviz mostra els titulars dels darrers dies ordenats per data. **Llegeix els titulars de les últimes 48-72 hores.** Busca:
+
+- **Resultats financers recents:** Si l'empresa ha publicat resultats en els últims dies, el moviment de preu pot estar relacionat.
+- **Canvis de directiu:** Un nou CEO o CFO pot canviar el rumb de l'empresa.
+- **Fusions o adquisicions:** Canvien completament la tesi d'inversió.
+- **Notícies sectorials:** Una regulació nova que afecti tot el sector.
+
+Si veus notícies positives recents que coincideixen amb el rebot detectat per RadarCore, és una confirmació de qualitat. Si les notícies son negatives però el preu rebota, cal entendre per qué.
+
+#### Quarta mirada — Els analistes (si vols aprofundir)
+
+- **Target Price:** El preu objectiu dels analistes de Wall Street
+- **Analyst Recom.:** La recomanació agregada (Buy / Hold / Sell)
+
+Estos camps no son definitius, però si la recomanació és "Strong Sell" i RadarCore detecta una oportunitat, val la pena saber-ho.
+
+### Exemple pràctic de lectura de Finviz
+
+RadarCore detecta MSFT com a SWING en fase MID. Obres Finviz i veus:
+- **Gràfic:** Clara caiguda des de 450$ fins a 380$ i rebot als 410$. La forma coincideix amb el patró detectat ✅
+- **P/E 31:** Lleugerament alt però raonable per a Microsoft ✅
+- **RSI 52:** En zona neutra, ni sobrecomprat ni sobrevenut ✅
+- **Short Float 0.6%:** Quasi ningú aposta a la baixada ✅
+- **Perf Week +3.2%:** El rebot que RadarCore ha detectat és real i recent ✅
+- **Notícia recent:** "Microsoft raises Azure guidance for Q4" ✅
+
+**Conclusió:** Tot confirma la tesi de RadarCore. És un bon candidat per aprofundir.
+
+---
+
+## Capítol 16c: El botó SEC Filings — la font primària de tota la informació
+
+Quan fas clic al botó **🏛️ SEC Filings** de RadarCore, s'obre la base de dades oficial de la SEC per a aquella empresa.
+
+### Què és la SEC i per qué importa
+
+La **SEC** (Securities and Exchange Commission) és l'equivalent americà de la CNMV espanyola: l'organisme governamental que regula els mercats financers dels Estats Units. Totes les empreses que cotitzen en borses americanes estan **obligades per llei** a publicar informació sobre qualsevol fet que pugui afectar el preu de les seves accions.
+
+Aquesta informació es publica en el sistema **EDGAR** (Electronic Data Gathering, Analysis, and Retrieval) de la SEC, que és públic i gratuït.
+
+La importància per a tu: **la SEC és la font primària de tota la informació oficial**. Yahoo Finance, Bloomberg, CNBC — tots obtenen la informació de la SEC.
+
+### El document més important: el formulari 8-K
+
+El **8-K** és l'obligació que té l'empresa de notificar qualsevol "fet material" en un termini de 4 dies hàbils.
+
+**Exemples de 8-K que pots trobar:**
+
+| Tipus de 8-K | Significat | Impacte en el preu |
+|-------------|------------|-------------------|
+| Resultats financers (Earnings) | L'empresa publica els números del trimestre | Pot pujar o baixar molt |
+| Canvi de CEO o CFO | Un directiu clau entra o surt | Incert, depèn del motiu |
+| Adquisició d'altra empresa | Compren o son comprats | Sol pujar si compren |
+| Emissió de noves accions | Venen accions noves per captar capital | Sol baixar (dilució) |
+| Demanda judicial important | L'empresa és demanada o demanda | Depèn de la gravetat |
+
+### Quan has d'obrir SEC Filings
+
+**Sempre que:**
+- RadarCore detecta una caiguda gran (>25%) i no entens per qué ha caigut
+- Vols saber si ha passat alguna cosa important en els últims 30 dies
+- Finviz mostra una notícia recent que no entens del tot
+
+**El flux recomanat:**
+1. RadarCore detecta l'oportunitat
+2. Obres Finviz → mires el gràfic i els números
+3. Si les notícies mencionen alguna cosa important, obres SEC Filings per llegir el 8-K oficial
+4. Amb tota aquesta informació, decideixes si la tesi és sòlida o si hi ha factors de risc que RadarCore no pot detectar
+
+### Altres documents útils de la SEC
+
+- **10-K:** L'informe anual complet. La secció "Risk Factors" és valuosa.
+- **10-Q:** L'informe trimestral. Més freqüent que el 10-K.
+- **Form 4:** Compres i vendes d'accions per part dels directius. Si el CEO compra moltes accions pròpies, és un senyal positiu.
+
+---
+
 ## Capítol 17: Els Earnings — el risc més important del swing trading
 
 ### Què són els Earnings?

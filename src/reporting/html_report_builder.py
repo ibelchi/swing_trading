@@ -1,272 +1,545 @@
-import datetime
-import os
-from src.data.macro_fetcher import get_macro_context
-from src.utils.analysis_utils import is_not_recommended_today
+from datetime import datetime
+import json
 
-def generate_html_report(opportunities: list, macro_data: dict = None, scan_config: dict = None) -> str:
+def classify_opportunity(opp) -> str:
     """
-    Generates a self-contained HTML report based on the Trazo design.
+    Retorna: "top_pick", "on_watch",
+             "with_flags" o "skip_today"
     """
-    now = datetime.datetime.now()
-    date_str = now.strftime("%d %b %Y")
-    time_str = now.strftime("%H:%M")
+    m = getattr(opp, "metrics", {}) or (opp.get("metrics", {}) if isinstance(opp, dict) else {})
+    phase = m.get("phase", "")
+    rsi = m.get("rsi_14", 50)
+    if rsi is None: rsi = 50
+    upside = m.get("upside_to_ath3y", 0)
+    if upside is None: upside = 0
+    days_earn = m.get("days_to_next_earnings")
     
-    # Macro block
-    if macro_data is None:
-        macro_data = get_macro_context()
-    macro_html = ""
-    alerta_vix = macro_data.get("alerta_vix", False)
-    
-    tickers_macro = ["SPY", "QQQ", "VIX", "TNX", "DXY"]
-    
-    for symbol in tickers_macro:
-        data = macro_data.get(symbol, {})
-        if not data: continue
-        label = data.get("name", symbol)
-        val = data.get("value", 0)
-        pct = data.get("change_pct", 0)
-        cls = "pos" if pct >= 0 else "neg"
-        macro_html += f"""
-        <div class="macro-tile">
-            <div class="lbl">{label}</div>
-            <div class="val">{val:,.2f}</div>
-            <div class="pct {cls}">{pct:+.2f}%</div>
-        </div>
-        """
+    # Handle the not_recommended flag
+    not_rec = False
+    if isinstance(opp, dict):
+        not_rec = opp.get("not_recommended", False)
+    else:
+        not_rec = getattr(opp, "not_recommended", False)
 
-    # Banner VIX
-    vix_banner = ""
-    if alerta_vix:
-        vix_banner = f"""
-        <div style="background: var(--red); color: white; padding: 10px; border-radius: 8px; margin-bottom: 20px; text-align: center; font-weight: bold;">
-            ⚠️ VOLATILITY ALERT: Elevated VIX ({macro_data.get('VIX', {}).get('value', 0):.2f})
-        </div>
-        """
+    if not_rec or phase == "LATE":
+        return "skip_today"
 
-    # Processar oportunitats
-    # Ordenar per score si existeix
+    has_flags = (
+        rsi > 70 or
+        upside < 5 or
+        (days_earn is not None and days_earn < 14)
+    )
+    if has_flags:
+        return "with_flags"
+
+    is_top = (
+        phase in ("VALLEY", "MID") and
+        35 <= rsi <= 65 and
+        upside >= 15 and
+        (days_earn is None or days_earn >= 14)
+    )
+    if is_top:
+        return "top_pick"
+
+    return "on_watch"
+
+def get_flag_motive(opp) -> str:
+    m = getattr(opp, "metrics", {}) or (opp.get("metrics", {}) if isinstance(opp, dict) else {})
+    rsi = m.get("rsi_14", 50) or 50
+    upside = m.get("upside_to_ath3y", 0) or 0
+    days_earn = m.get("days_to_next_earnings")
+    
+    motives = []
+    if rsi > 70: motives.append(f"RSI Overbought ({rsi:.1f})")
+    if upside < 5: motives.append(f"Low Upside ({upside:.1f}%)")
+    if days_earn is not None and days_earn < 14: motives.append(f"Earnings in {days_earn}d")
+    return " | ".join(motives) if motives else "Technical Warning"
+
+def get_skip_reason(opp) -> str:
+    m = getattr(opp, "metrics", {}) or (opp.get("metrics", {}) if isinstance(opp, dict) else {})
+    phase = m.get("phase", "")
+    if phase == "LATE": return "Late Cycle / Mature Extension"
+    
+    # Try to get reason from analysis_utils
+    try:
+        from src.utils.analysis_utils import is_not_recommended_today
+        _, reason = is_not_recommended_today(m)
+        return reason or "Strategy exclusion"
+    except:
+        return "Excluded by risk filters"
+
+def generate_html_report(
+    opportunities: list,
+    macro_data: dict = None,
+    scan_config: dict = None,
+    not_recommended: list = None,
+    reports: dict = None  # {symbol: report_text}
+) -> str:
+    """
+    Generates a standalone HTML report for the detected opportunities.
+    Re-structured on 2026-04-25 into 4 categories.
+    """
+    # 1. DEDUPLICATE AND MERGE
     all_opps = []
-    for op in opportunities:
-        m = op.metrics or {}
-        score = m.get("bucket_score", 0)
-        all_opps.append((op, score))
+    seen = set()
     
-    all_opps.sort(key=lambda x: x[1], reverse=True)
-    
-    top_5 = []
-    not_recommended = []
-    
-    for op, score in all_opps:
-        m = op.metrics or {}
-        is_risky, reason = is_not_recommended_today(m)
-        if is_risky:
-            not_recommended.append((op, reason))
-        elif len(top_5) < 5:
-            top_5.append(op)
+    # Process recommended
+    for opp in opportunities:
+        sym = getattr(opp, "symbol", None) or (opp.get("symbol") if isinstance(opp, dict) else None)
+        if sym and sym not in seen:
+            seen.add(sym)
+            # Inject recommendation flag for classifier
+            if isinstance(opp, dict): opp["not_recommended"] = False
+            else: setattr(opp, "not_recommended", False)
+            all_opps.append(opp)
+            
+    # Process not recommended
+    if not_recommended:
+        for opp in not_recommended:
+            sym = getattr(opp, "symbol", None) or (opp.get("symbol") if isinstance(opp, dict) else None)
+            if sym and sym not in seen:
+                seen.add(sym)
+                if isinstance(opp, dict): opp["not_recommended"] = True
+                else: setattr(opp, "not_recommended", True)
+                all_opps.append(opp)
 
-    # Oportunitats Principals HTML
-    opps_html = ""
-    for op in top_5:
-        m = op.metrics or {}
-        ticker = op.symbol
-        name = op.company_name or ticker
-        price = op.current_price or 0
-        bucket = m.get("bucket", "N/A")
+    # 2. CLASSIFY
+    categories = {
+        "top_pick": [],
+        "on_watch": [],
+        "with_flags": [],
+        "skip_today": []
+    }
+    
+    for opp in all_opps:
+        cat = classify_opportunity(opp)
+        categories[cat].append(opp)
+
+    # 3. SORT
+    # Priority: Phase (VALLEY > MID > MATURE) then Upside 3Y desc
+    PHASE_PRIORITY = {"VALLEY": 0, "MID": 1, "MATURE": 2, "LATE": 3}
+    def sort_key(o):
+        m = getattr(o, "metrics", {}) or (o.get("metrics", {}) if isinstance(o, dict) else {})
+        p = m.get("phase", "UNKNOWN")
+        pv = PHASE_PRIORITY.get(p, 99)
+        up = m.get("upside_to_ath3y", 0) or 0
+        return (pv, -up)
+
+    for k in categories:
+        categories[k].sort(key=sort_key)
+
+    n_top = len(categories["top_pick"])
+    n_watch = len(categories["on_watch"])
+    n_flags = len(categories["with_flags"])
+    n_skip = len(categories["skip_today"])
+
+    timestamp = datetime.now().strftime('%Y-%m-%d %H:%M')
+    
+    # CSS Styles
+    css = """
+    <style>
+    :root {
+        --bg: #0b0d10;
+        --card-bg: #161b22;
+        --card-border: #232a35;
+        --text: #e6edf3;
+        --text-dim: #848d97;
+        --gold: #c9a35c;
+        --gold-light: #e8c98e;
+        --green: #4ade80;
+        --red: #f87171;
+        --amber: #fbbf24;
+        --blue: #3b82f6;
+    }
+    
+    body {
+        background-color: var(--bg);
+        color: var(--text);
+        font-family: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        margin: 0;
+        padding: 40px 20px;
+        line-height: 1.5;
+    }
+    
+    .container {
+        max-width: 1100px;
+        margin: 0 auto;
+    }
+    
+    header {
+        text-align: center;
+        margin-bottom: 40px;
+    }
+    
+    .pulse-dot {
+        display: inline-block;
+        width: 10px;
+        height: 10px;
+        background-color: var(--red);
+        border-radius: 50%;
+        margin-right: 10px;
+        animation: pulse 2s infinite;
+    }
+    
+    @keyframes pulse {
+        0% { box-shadow: 0 0 0 0 rgba(248, 113, 113, 0.7); }
+        70% { box-shadow: 0 0 0 10px rgba(248, 113, 113, 0); }
+        100% { box-shadow: 0 0 0 0 rgba(248, 113, 113, 0); }
+    }
+    
+    h1 { font-size: 2.2rem; margin-bottom: 5px; }
+    .timestamp { color: var(--text-dim); font-size: 0.85rem; }
+    
+    .summary-bar {
+        display: flex; gap: 30px; justify-content: center;
+        margin: 20px 0; font-size: 0.9rem;
+        color: var(--text-dim);
+    }
+    .summary-bar span { font-weight: 600; }
+
+    /* Macro Grid */
+    .macro-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+        gap: 15px;
+        margin-bottom: 30px;
+    }
+    
+    .macro-tile {
+        background: var(--card-bg);
+        border: 1px solid var(--card-border);
+        padding: 12px;
+        border-radius: 8px;
+        text-align: center;
+    }
+    
+    .macro-label { font-size: 0.75rem; color: var(--text-dim); display: block; }
+    .macro-value { font-size: 1.1rem; font-weight: 700; display: block; }
+    .macro-change { font-size: 0.8rem; font-weight: 600; }
+    .positive { color: var(--green); }
+    .negative { color: var(--red); }
+    
+    .vix-banner {
+        background: rgba(251, 191, 36, 0.1);
+        border: 1px solid var(--amber);
+        color: var(--amber);
+        padding: 12px;
+        border-radius: 8px;
+        margin-bottom: 25px;
+        text-align: center;
+        font-weight: 600;
+        font-size: 0.9rem;
+    }
+    
+    /* Sections */
+    .section-title {
+        margin: 50px 0 20px 0;
+        padding-bottom: 10px;
+        border-bottom: 1px solid var(--card-border);
+        font-size: 1.5rem;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+    }
+
+    .opp-grid {
+        display: grid;
+        gap: 25px;
+        margin-bottom: 40px;
+    }
+    
+    .grid-top { grid-template-columns: repeat(auto-fit, minmax(450px, 1fr)); }
+    .grid-watch { grid-template-columns: repeat(auto-fit, minmax(350px, 1fr)); }
+
+    .opp-card {
+        background: var(--card-bg);
+        border: 1px solid var(--card-border);
+        border-radius: 12px;
+        padding: 22px;
+        position: relative;
+    }
+    
+    .card-top { border: 1px solid var(--gold); }
+
+    .opp-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        margin-bottom: 15px;
+    }
+    
+    .opp-ticker { font-size: 1.7rem; font-weight: 800; margin: 0; color: var(--gold); }
+    .opp-company { font-size: 0.85rem; color: var(--text-dim); display: block; }
+    .opp-price { font-size: 1.3rem; font-weight: 600; }
+    
+    .badge {
+        display: inline-block;
+        padding: 3px 8px;
+        border-radius: 4px;
+        font-size: 0.7rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        margin-right: 8px;
+    }
+    .badge-swing { background: rgba(201, 163, 92, 0.15); color: var(--gold); }
+    .badge-rise { background: rgba(74, 222, 128, 0.15); color: var(--green); }
+    .badge-default { background: rgba(132, 141, 151, 0.15); color: var(--text-dim); }
+    
+    .metrics-grid {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 12px;
+        margin: 15px 0;
+    }
+    
+    .metric-item { text-align: left; }
+    .metric-label { font-size: 0.65rem; color: var(--text-dim); display: block; }
+    .metric-val { font-size: 0.9rem; font-weight: 600; }
+    
+    .ai-report {
+        background: rgba(201, 163, 92, 0.05);
+        border-left: 3px solid var(--gold);
+        padding: 12px;
+        margin: 15px 0;
+        font-size: 0.8rem;
+        white-space: pre-wrap;
+    }
+    
+    .ai-details summary {
+        cursor: pointer;
+        color: var(--gold-light);
+        font-size: 0.8rem;
+        font-weight: 600;
+        margin-bottom: 10px;
+    }
+
+    .link-buttons { display: flex; gap: 8px; margin-top: 15px; }
+    .btn {
+        flex: 1;
+        text-align: center;
+        padding: 6px;
+        border-radius: 6px;
+        font-size: 0.7rem;
+        font-weight: 600;
+        text-decoration: none;
+        background: #232a35;
+        color: var(--text);
+        border: 1px solid #30363d;
+    }
+    .btn:hover { background: #30363d; }
+    
+    /* Horizontal Flags */
+    .flag-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        background: var(--card-bg);
+        border: 1px solid var(--card-border);
+        padding: 12px 20px;
+        border-radius: 8px;
+        margin-bottom: 8px;
+        font-size: 0.9rem;
+    }
+    .flag-sym { font-weight: 800; color: var(--gold); width: 80px; }
+    .flag-name { color: var(--text-dim); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-right: 20px; }
+    .flag-phase { width: 100px; font-weight: 600; }
+    .flag-motive { color: var(--amber); font-weight: 600; flex: 1; text-align: right; margin-right: 20px; }
+    .flag-upside { width: 80px; text-align: right; font-weight: 700; color: var(--green); }
+
+    /* Skip Today */
+    .skip-details {
+        background: #111418;
+        border: 1px solid #232a35;
+        padding: 5px 15px;
+        border-radius: 6px;
+        margin-bottom: 6px;
+    }
+    .skip-details summary {
+        cursor: pointer;
+        padding: 8px 0;
+        font-size: 0.85rem;
+        color: var(--text-dim);
+    }
+    .skip-content {
+        padding-bottom: 10px;
+        font-size: 0.8rem;
+        color: var(--red);
+        font-weight: 600;
+    }
+
+    footer {
+        text-align: center;
+        margin-top: 60px;
+        padding: 30px 0;
+        border-top: 1px solid var(--card-border);
+        color: var(--text-dim);
+        font-size: 0.75rem;
+    }
+    </style>
+    """
+    
+    # 4. BUILD HTML COMPONENTS
+    
+    # Macro section
+    macro_html = ""
+    if macro_data:
+        if macro_data.get('alerta_vix'):
+            macro_html += f'<div class="vix-banner">⚠️ VIX ALERT: {macro_data.get("VIX", {}).get("value", "N/A")} — High Volatility. Strategy: Defensive.</div>'
+        
+        macro_html += '<div class="macro-grid">'
+        for key in ["SPY", "QQQ", "VIX", "TNX", "DXY"]:
+            item = macro_data.get(key, {})
+            val = item.get('value', 'N/A')
+            change = item.get('change_pct', 0)
+            change_cls = "positive" if change >= 0 else "negative"
+            prefix = "+" if change >= 0 else ""
+            macro_html += f"""
+            <div class="macro-tile">
+                <span class="macro-label">{item.get('name', key)}</span>
+                <span class="macro-value">{val if isinstance(val, str) else f"{val:.2f}"}</span>
+                <span class="macro-change {change_cls}">{prefix}{change:.2f}%</span>
+            </div>
+            """
+        macro_html += '</div>'
+    else:
+        macro_html = '<div style="text-align:center; color:var(--text-dim); margin-bottom:30px;">Market data unavailable.</div>'
+
+    # Summary Bar
+    summary_bar_html = f"""
+    <div class="summary-bar">
+        <span>⭐ {n_top} Top Picks</span>
+        <span>📋 {n_watch} On Watch</span>
+        <span>⚠️ {n_flags} With Flags</span>
+        <span>❌ {n_skip} Skip Today</span>
+    </div>
+    """
+
+    # SECTIONS RENDERER
+    sections_html = ""
+    
+    # helper for card info
+    def get_card_body(op, mode="full"):
+        m = getattr(op, "metrics", {}) or (op.get("metrics", {}) if isinstance(op, dict) else {})
+        bucket = m.get("bucket", "UNKNOWN")
+        subtype = m.get("subtype", "")
+        badge_cls = f"badge-{bucket.lower()}" if bucket.lower() in ["swing", "rise"] else "badge-default"
         phase = m.get("phase", "N/A")
-        rsi = m.get("rsi_14")
-        vol_ratio = m.get("vol_ratio_3m")
-        explanation = op.explanation or "No AI analysis available."
+        pe_map = {"VALLEY":"🟢","MID":"🟡","MATURE":"🟠","LATE":"🔴"}
+        pe = pe_map.get(phase, "⚪")
         
-        # R/R and levels
-        entry = m.get("entry_price", 0)
-        stop = op.stop_loss or 0
-        target = op.target_price or 0
-        rr = m.get("risk_reward", 0)
-        
-        rsi_str = f"RSI14 <b>{rsi:.1f}</b>" if rsi is not None else "RSI N/A"
-        vol_str = f"Vol 3M <b>{vol_ratio:.1f}x</b>" if vol_ratio is not None else ""
-        vol_badge = '<div class="badge media" style="background: rgba(96,165,250,0.15); color: var(--blue);">🔵 Institutional Volume</div>' if vol_ratio and vol_ratio >= 2.0 else ""
-        
-        opps_html += f"""
-        <div class="opp priority">
-          {vol_badge}
-          <div class="ticker"><span class="sym">{ticker}</span><span class="name">{name}</span></div>
-          <div class="price-row"><span class="price">${price:.2f}</span></div>
-          <div class="tags">
-            <span class="tag swing">Bucket: {bucket}</span>
-            <span class="tag riser">Phase: {phase}</span>
-          </div>
-          <div class="levels">
-            <div class="lvl"><div class="lvl-lbl">Entry</div><div class="lvl-val entry">${entry:.2f}</div></div>
-            <div class="lvl"><div class="lvl-lbl">Stop</div><div class="lvl-val stop">${stop:.2f}</div></div>
-            <div class="lvl"><div class="lvl-lbl">Target</div><div class="lvl-val t1">${target:.2f}</div></div>
-            <div class="lvl"><div class="lvl-lbl">R/R</div><div class="lvl-val">{rr:.2f}x</div></div>
-          </div>
-          <div class="indicators">
-            <span class="ind">{rsi_str}</span>
-            <span class="ind">{vol_str}</span>
-          </div>
-          <div class="reasoning">
-            <span class="label">RadarCore Analysis</span>
-            {explanation}
-          </div>
-        </div>
+        report_text = (reports or {}).get(op.symbol) or getattr(op, "explanation", "")
+        if mode == "full":
+            ai_html = f'<div class="ai-report">{report_text}</div>' if report_text else '<div style="margin:15px 0; color:var(--text-dim); font-size:0.8rem; font-style:italic;">No AI report available.</div>'
+        else: # collapsed
+            ai_html = f'<details class="ai-details"><summary>View AI Analysis</summary><div class="ai-report">{report_text}</div></details>' if report_text else ''
+
+        return f"""
+            <div class="opp-header">
+                <div>
+                    <h2 class="opp-ticker">{op.symbol}</h2>
+                    <span class="opp-company">{op.company_name or ""}</span>
+                </div>
+                <div class="opp-price">${op.current_price:.2f}</div>
+            </div>
+            <div>
+                <span class="badge {badge_cls}">{bucket} {'→ ' + subtype if subtype else ''}</span>
+                <span style="font-size:0.85rem;">{pe} {phase}</span>
+            </div>
+            <div class="metrics-grid">
+                <div class="metric-item"><span class="metric-label">Drop %</span><span class="metric-val">{m.get('drop_from_high_pct', 0):.1f}%</span></div>
+                <div class="metric-item"><span class="metric-label">Rebound %</span><span class="metric-val">{m.get('rebound_pct', 0):.1f}%</span></div>
+                <div class="metric-item"><span class="metric-label">RSI(14)</span><span class="metric-val">{m.get('rsi_14', 'N/A')}</span></div>
+                <div class="metric-item"><span class="metric-label">Vol 3M</span><span class="metric-val">{m.get('vol_ratio_3m', 1):.1f}x</span></div>
+                <div class="metric-item"><span class="metric-label">Upside 3Y</span><span class="metric-val">{m.get('upside_to_ath3y', 0):.1f}%</span></div>
+                <div class="metric-item"><span class="metric-label">Progress</span><span class="metric-val">{m.get('progress_pct', 0):.0f}%</span></div>
+            </div>
+            {ai_html}
+            <div class="link-buttons">
+                <a href="https://finance.yahoo.com/quote/{op.symbol}" class="btn" target="_blank">Yahoo</a>
+                <a href="https://finviz.com/quote.ashx?t={op.symbol}" class="btn" target="_blank">Finviz</a>
+                <a href="https://www.sec.gov/cgi-bin/browse-edgar?CIK={op.symbol}" class="btn" target="_blank">SEC</a>
+            </div>
         """
 
-    # No entrar avui HTML
-    not_rec_html = ""
-    for op, reason in not_recommended:
-        not_rec_html += f"""
-        <tr>
-            <td><b>{op.symbol}</b></td>
-            <td>{op.metrics.get('bucket', 'N/A')}</td>
-            <td class="num">{op.metrics.get('rsi_14', 'N/A')}</td>
-            <td style="color: var(--red)">{reason}</td>
-        </tr>
-        """
-    
-    if not not_rec_html:
-        not_rec_html = "<tr><td colspan='4'>No opportunities filtered today.</td></tr>"
+    # SECTION A: Top Picks
+    if categories["top_pick"]:
+        sections_html += '<h2 class="section-title">⭐ Top Picks</h2>'
+        sections_html += '<div class="opp-grid grid-top">'
+        for op in categories["top_pick"]:
+            sections_html += f'<div class="opp-card card-top">{get_card_body(op, "full")}</div>'
+        sections_html += '</div>'
 
-    # Pla per demà HTML (Top 3)
-    plan_html = ""
-    plan_opps = top_5[:3]
-    for op in plan_opps:
-        m = op.metrics or {}
-        plan_html += f"""
-        <div class="plan-card">
-          <h3>{op.symbol}</h3>
-          <ul>
-            <li><b>Suggested Entry:</b> ${m.get('entry_price', 0):.2f}</li>
-            <li><b>Stop Loss:</b> ${op.stop_loss or 0:.2f}</li>
-            <li><b>Estimated R/R:</b> {m.get('risk_reward', 0):.2f}x</li>
-          </ul>
-        </div>
-        """
+    # SECTION B: On Watch
+    if categories["on_watch"]:
+        sections_html += '<h2 class="section-title">📋 On Watch</h2>'
+        sections_html += '<div class="opp-grid grid-watch">'
+        for op in categories["on_watch"]:
+            sections_html += f'<div class="opp-card">{get_card_body(op, "collapsed")}</div>'
+        sections_html += '</div>'
 
-    # HTML Complet
-    full_html = f"""<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>RadarCore · Report {date_str}</title>
-<style>
-  :root {{
-    --bg: #0b0d10;
-    --bg-alt: #11141a;
-    --bg-card: #161b22;
-    --bg-card-hi: #1c2230;
-    --line: #232a35;
-    --line-soft: #1a1f29;
-    --text: #e8edf2;
-    --text-dim: #98a2b3;
-    --text-faint: #6b7686;
-    --gold: #c9a35c;
-    --gold-bright: #e8c98e;
-    --green: #4ade80;
-    --green-soft: #1f3a2a;
-    --red: #f87171;
-    --red-soft: #3a1f24;
-    --amber: #fbbf24;
-    --amber-soft: #3a2e15;
-    --blue: #60a5fa;
-    --blue-soft: #1e2a3d;
-    --purple: #a78bfa;
-  }}
-  * {{ box-sizing: border-box; }}
-  html, body {{ margin: 0; padding: 0; background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, sans-serif; line-height: 1.55; }}
-  .wrap {{ max-width: 1180px; margin: 0 auto; padding: 28px 24px 96px; }}
-  header.top {{ border-bottom: 1px solid var(--line); padding-bottom: 22px; margin-bottom: 28px; }}
-  header.top h1 {{ font-size: 26px; margin: 0 0 4px 0; font-weight: 600; }}
-  header.top h1 .accent {{ color: var(--gold); }}
-  header.top .meta {{ color: var(--text-dim); font-size: 13px; }}
-  section {{ margin-bottom: 42px; }}
-  section > h2.heading {{ font-size: 18px; margin: 0 0 18px 0; padding-bottom: 8px; border-bottom: 1px solid var(--line); font-weight: 600; }}
-  .macro-grid {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin-bottom: 14px; }}
-  .macro-tile {{ background: var(--bg-card); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; }}
-  .macro-tile .lbl {{ color: var(--text-faint); font-size: 11px; text-transform: uppercase; }}
-  .macro-tile .val {{ font-size: 18px; font-weight: 600; margin-top: 4px; }}
-  .pos {{ color: var(--green); }}
-  .neg {{ color: var(--red); }}
-  .opp-grid {{ display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }}
-  @media (max-width: 760px) {{ .opp-grid {{ grid-template-columns: 1fr; }} }}
-  .opp {{ background: var(--bg-card); border: 1px solid var(--line); border-radius: 14px; padding: 20px 22px; position: relative; }}
-  .opp.priority {{ border-color: var(--gold); }}
-  .opp .badge {{ position: absolute; top: 14px; right: 14px; font-size: 10px; padding: 3px 8px; border-radius: 4px; text-transform: uppercase; }}
-  .opp .ticker {{ display: flex; align-items: baseline; gap: 8px; margin-bottom: 4px; }}
-  .opp .sym {{ font-size: 22px; font-weight: 700; }}
-  .opp .price {{ font-size: 20px; font-weight: 600; }}
-  .tags {{ display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px; }}
-  .tag {{ font-size: 11px; padding: 3px 8px; border-radius: 4px; background: var(--bg-card-hi); color: var(--text-dim); border: 1px solid var(--line); }}
-  .tag.swing {{ color: var(--blue); border-color: rgba(96,165,250,0.3); }}
-  .tag.riser {{ color: var(--green); border-color: rgba(74,222,128,0.3); }}
-  .levels {{ display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; background: var(--bg-card-hi); border-radius: 8px; padding: 10px 12px; margin-bottom: 12px; font-size: 12px; }}
-  .lvl-lbl {{ color: var(--text-faint); font-size: 10px; text-transform: uppercase; }}
-  .lvl-val {{ color: var(--text); font-weight: 600; }}
-  .lvl-val.entry {{ color: var(--gold-bright); }}
-  .lvl-val.stop {{ color: var(--red); }}
-  .indicators {{ display: flex; flex-wrap: wrap; gap: 14px; font-size: 12px; margin-bottom: 12px; color: var(--text-dim); }}
-  .indicators b {{ color: var(--text); }}
-  .reasoning {{ color: var(--text); font-size: 13px; border-top: 1px dashed var(--line); padding-top: 12px; }}
-  .reasoning .label {{ color: var(--gold); font-weight: 600; font-size: 11px; text-transform: uppercase; display: block; margin-bottom: 4px; }}
-  table.t {{ width: 100%; border-collapse: collapse; font-size: 13px; }}
-  table.t th, table.t td {{ text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line-soft); }}
-  table.t th {{ color: var(--text-faint); font-size: 11px; text-transform: uppercase; }}
-  .plan {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 14px; }}
-  .plan-card {{ background: var(--bg-card); border: 1px solid var(--line); border-radius: 12px; padding: 16px 18px; }}
-  .plan-card h3 {{ margin: 0 0 8px 0; font-size: 13px; text-transform: uppercase; color: var(--gold); }}
-  footer {{ margin-top: 60px; padding: 32px 0; border-top: 1px solid var(--line); color: var(--text-faint); font-size: 12px; text-align: center; }}
-</style>
-</head>
-<body>
-<div class="wrap">
-    {vix_banner}
-    <header class="top">
-        <h1>RadarCore Report <span class="accent">— {date_str}</span></h1>
-        <div class="meta">Market analysis generated at {time_str}</div>
-    </header>
+    # DIVIDER
+    if (categories["top_pick"] or categories["on_watch"]) and (categories["with_flags"] or categories["skip_today"]):
+        sections_html += '<hr style="border: 0; border-top: 1px solid #30363d; margin: 40px 0;">'
 
-    <section id="macro">
-        <h2 class="heading">Macro Context</h2>
-        <div class="macro-grid">
+    # SECTION C: With Flags
+    if categories["with_flags"]:
+        sections_html += '<h2 class="section-title">⚠️ Detected with Flags</h2>'
+        for op in categories["with_flags"]:
+            m = getattr(op, "metrics", {}) or (op.get("metrics", {}) if isinstance(op, dict) else {})
+            motive = get_flag_motive(op)
+            upside = m.get('upside_to_ath3y', 0)
+            sections_html += f"""
+            <div class="flag-row">
+                <span class="flag-sym">{op.symbol}</span>
+                <span class="flag-name">{op.company_name or ""}</span>
+                <span class="flag-phase">{m.get('phase', '')}</span>
+                <span class="flag-motive">{motive}</span>
+                <span class="flag-upside">+{upside:.1f}%</span>
+            </div>
+            """
+
+    # SECTION D: Skip Today
+    if categories["skip_today"]:
+        sections_html += '<h2 class="section-title">❌ Skip Today</h2>'
+        for op in categories["skip_today"]:
+            reason = get_skip_reason(op)
+            sections_html += f"""
+            <details class="skip-details">
+                <summary>{op.symbol} — {op.company_name or ""}</summary>
+                <div class="skip-content">REASON: {reason}</div>
+            </details>
+            """
+
+    # FINAL ASSEMBLY
+    html = f"""
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>RadarCore | {timestamp}</title>
+        {css}
+    </head>
+    <body>
+        <div class="container">
+            <header>
+                <h1><span class="pulse-dot"></span>RadarCore Intelligence</h1>
+                <div class="timestamp">Market Scan Analysis · {timestamp}</div>
+            </header>
+            
             {macro_html}
+            {summary_bar_html}
+            {sections_html}
+            
+            <footer>
+                <p>RadarCore Engine v2.5 · {timestamp}</p>
+                <p style="opacity:0.5; max-width:600px; margin:10px auto;">
+                    This report is generated automatically based on technical and fundamental data. 
+                    Not financial advice. High risk investment detected.
+                </p>
+            </footer>
         </div>
-    </section>
-
-    <section id="oportunidades">
-        <h2 class="heading">Main Opportunities (Top 5 by Score)</h2>
-        <div class="opp-grid">
-            {opps_html}
-        </div>
-    </section>
-
-    <section id="no-entrar">
-        <h2 class="heading">No Entry Today (High Risk)</h2>
-        <table class="t">
-            <thead>
-                <tr><th>Ticker</th><th>Bucket</th><th>RSI</th><th>Reason</th></tr>
-            </thead>
-            <tbody>
-                {not_rec_html}
-            </tbody>
-        </table>
-    </section>
-
-    <section id="plan">
-        <h2 class="heading">Plan for Tomorrow</h2>
-        <div class="plan">
-            {plan_html}
-        </div>
-    </section>
-
-    <footer>
-        <p>RadarCore Assistant · Automatically generated · {date_str}</p>
-        <div style="margin-top: 15px; font-size: 11px; color: var(--text-faint); max-width: 800px; margin-left: auto; margin-right: auto; line-height: 1.4; border-top: 1px dashed var(--line-soft); padding-top: 15px;">
-            <b>Disclaimer:</b> This report is for informational and educational purposes only and does NOT constitute financial advice, investment recommendations, or an offer to buy or sell any securities. Trading involves significant risk. RadarCore and its authors decline all responsibility for any financial losses or damages resulting from the use of this information. Always perform your own due diligence.
-        </div>
-    </footer>
-</div>
-</body>
-</html>"""
-    return full_html
+    </body>
+    </html>
+    """
+    return html

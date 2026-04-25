@@ -45,6 +45,7 @@ vector_store/
 
 # Custom UI
 .streamlit/secrets.toml
+.streamlit/custom_preset.json
 
 # Additions from security audit
 .env*
