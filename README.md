@@ -19,7 +19,6 @@
 * **Strategy System:** Plug-and-play architecture. Includes a configurable "Buy the Recovery" strategy by default with European market-friendly defaults.
 * **Streamlit UI:** Automated SQLite database and an interactive research dashboard with real-time heartbeat scanner feedback and stable selection persistence.
 * **Smart Data:** Real-time company name lookup, system vs idiosyncratic market context (SPY tracking), and rich technical metrics.
-* **Multi-Language Support:** Full results in English, Spanish, or Catalan.
 
 ## Requirements
 
